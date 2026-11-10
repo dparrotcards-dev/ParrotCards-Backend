@@ -45,7 +45,7 @@ app.use(
     verify: (req: any, res, buf) => {
       req.rawBody = buf.toString();
     },
-    limit: '2mb',
+    limit: '10mb',
   })
 );
 app.use(express.urlencoded({ extended: true }));

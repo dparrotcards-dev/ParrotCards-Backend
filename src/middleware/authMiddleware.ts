@@ -9,7 +9,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  const token = req.cookies?.token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.cookies?.token;
 
   if (!token) {
     res.status(401).json({
@@ -32,7 +32,7 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 }
 
 export function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  const token = req.cookies?.token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || req.cookies?.token;
   const guestHeader = req.headers['x-guest-session-id'] as string;
 
   if (guestHeader) {

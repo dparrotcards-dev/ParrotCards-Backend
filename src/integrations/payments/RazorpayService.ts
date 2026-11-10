@@ -42,6 +42,18 @@ export class RazorpayService {
     itemType: PaymentItemType,
     notes: Record<string, string> = {}
   ): Promise<{ id: string; amount: number; currency: string }> {
+    const isTestEnv = process.env.NODE_ENV === 'test' || ENV.NODE_ENV === 'test';
+    const hasPlaceholderCredentials =
+      this.keyId === 'rzp_test_ParrotCardsKey' ||
+      this.keySecret === 'rzp_test_ParrotCardsSecret' ||
+      this.keySecret.startsWith('replace_with_');
+
+    if (!isTestEnv && (!this.keyId || !this.keySecret || hasPlaceholderCredentials)) {
+      throw new Error(
+        'Razorpay test credentials are incomplete. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in Backend/.env.'
+      );
+    }
+
     const amount = this.getPriceForType(itemType);
 
     try {
@@ -62,7 +74,6 @@ export class RazorpayService {
       };
     } catch (err: any) {
       // Simulated mock orders are strictly restricted to explicitly configured automated test execution (NODE_ENV === 'test')
-      const isTestEnv = process.env.NODE_ENV === 'test' || ENV.NODE_ENV === 'test';
       if (isTestEnv) {
         const mockOrderId = `order_sim_${crypto.randomBytes(8).toString('hex')}`;
         return {
@@ -105,6 +116,14 @@ export class RazorpayService {
    * Verify webhook event signature
    */
   public verifyWebhookSignature(rawBody: string, signatureHeader: string): boolean {
+    if (
+      !this.webhookSecret ||
+      this.webhookSecret === 'rzp_test_webhook_secret' ||
+      this.webhookSecret.startsWith('replace_with_')
+    ) {
+      return false;
+    }
+
     try {
       const expectedSignature = crypto
         .createHmac('sha256', this.webhookSecret)

@@ -7,7 +7,7 @@ import { IAuthUser } from '../types';
 
 export class AuthService {
   private readonly SALT_ROUNDS = 10;
-  private readonly TOKEN_EXPIRY = '30d';
+  private readonly TOKEN_EXPIRY = '365d';
 
   public async register(input: RegisterInput): Promise<{ user: IAuthUser; token: string }> {
     const existing = await User.findOne({ email: input.email.toLowerCase() });
@@ -75,7 +75,7 @@ export class AuthService {
       httpOnly: true,
       secure: isProd,
       sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      maxAge: 365 * 24 * 60 * 60 * 1000, // 365 days persistent
       path: '/',
     };
   }

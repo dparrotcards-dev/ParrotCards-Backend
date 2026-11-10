@@ -10,6 +10,7 @@ import paymentRoutes from './paymentRoutes';
 import entitlementRoutes from './entitlementRoutes';
 import accountRoutes from './accountRoutes';
 import adminRoutes from './adminRoutes';
+import storeRoutes from './storeRoutes';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use('/payments', paymentRoutes);
 router.use('/entitlements', entitlementRoutes);
 router.use('/account', accountRoutes);
 router.use('/admin', adminRoutes);
+router.use('/store', storeRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

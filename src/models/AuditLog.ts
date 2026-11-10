@@ -5,7 +5,7 @@ export interface IAuditLog extends Document {
   adminEmail: string;
   adminName?: string;
   action: string;
-  targetType: 'USER' | 'DECK' | 'CARD' | 'PAYMENT' | 'SYSTEM' | 'AUTH' | 'SETTINGS';
+  targetType: 'USER' | 'DECK' | 'CARD' | 'PAYMENT' | 'PRODUCT' | 'SYSTEM' | 'AUTH' | 'SETTINGS';
   targetId?: string;
   details?: Record<string, any>;
   ipAddress?: string;
@@ -22,7 +22,7 @@ const AuditLogSchema = new Schema<IAuditLog>(
     action: { type: String, required: true, index: true },
     targetType: {
       type: String,
-      enum: ['USER', 'DECK', 'CARD', 'PAYMENT', 'SYSTEM', 'AUTH', 'SETTINGS'],
+      enum: ['USER', 'DECK', 'CARD', 'PAYMENT', 'PRODUCT', 'SYSTEM', 'AUTH', 'SETTINGS'],
       required: true,
       index: true,
     },

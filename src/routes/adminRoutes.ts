@@ -46,4 +46,12 @@ router.get('/audit-logs', requireAdmin, (req, res, next) => controller.getAuditL
 // 11. Admin Password Management
 router.post('/change-password', requireAdmin, (req, res, next) => controller.changePassword(req, res, next));
 
+// 12. Cosmic Store Product Management
+router.post('/products', requireAdmin, (req, res, next) => controller.createProduct(req, res, next));
+router.get('/products', requireAdmin, (req, res, next) => controller.getProducts(req, res, next));
+router.put('/products/:id', requireAdmin, (req, res, next) => controller.updateProduct(req, res, next));
+router.delete('/products/:id', requireAdmin, (req, res, next) => controller.deleteProduct(req, res, next));
+router.patch('/products/:id/status', requireAdmin, (req, res, next) => controller.toggleProductStatus(req, res, next));
+router.patch('/products/:id/stock', requireAdmin, (req, res, next) => controller.toggleProductStock(req, res, next));
+
 export default router;

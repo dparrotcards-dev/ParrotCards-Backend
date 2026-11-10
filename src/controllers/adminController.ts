@@ -16,6 +16,8 @@ import { CardDefinition } from '../models/CardDefinition';
 import { WebhookEvent } from '../models/WebhookEvent';
 import { BirthProfile } from '../models/BirthProfile';
 import { AuditLog } from '../models/AuditLog';
+import { CosmicProduct } from '../models/CosmicProduct';
+import { clearStoreCache } from './storeController';
 import { ENV } from '../config/env';
 
 /**
@@ -24,7 +26,7 @@ import { ENV } from '../config/env';
 async function recordAuditAction(
   req: AuthenticatedRequest,
   action: string,
-  targetType: 'USER' | 'DECK' | 'CARD' | 'PAYMENT' | 'SYSTEM' | 'AUTH' | 'SETTINGS',
+  targetType: 'USER' | 'DECK' | 'CARD' | 'PAYMENT' | 'PRODUCT' | 'SYSTEM' | 'AUTH' | 'SETTINGS',
   targetId?: string,
   details?: Record<string, any>,
   status: 'SUCCESS' | 'FAILURE' = 'SUCCESS'
@@ -1499,6 +1501,418 @@ export class AdminController {
       res.json({
         success: true,
         message: 'Password changed successfully. You can now use your new password.',
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  // ─── COSMIC STORE PRODUCT MANAGEMENT ───────────────────────────────
+
+  /**
+   * 12. Create Cosmic Store Product
+   */
+  public async createProduct(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { name, shortDescription, price, mrp, badge, category, image } = req.body;
+
+      if (!name || !String(name).trim()) {
+        res.status(400).json({ success: false, message: 'Product name is required.' });
+        return;
+      }
+      if (!shortDescription || !String(shortDescription).trim()) {
+        res.status(400).json({ success: false, message: 'Short description is required.' });
+        return;
+      }
+
+      const numericPrice = Number(price);
+      const numericMrp = Number(mrp);
+
+      if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+        res.status(400).json({ success: false, message: 'Selling price must be a positive number.' });
+        return;
+      }
+      if (!Number.isFinite(numericMrp) || numericMrp < numericPrice) {
+        res.status(400).json({ success: false, message: 'MRP must be equal to or greater than the selling price.' });
+        return;
+      }
+      if (!image) {
+        res.status(400).json({ success: false, message: 'Product image is required.' });
+        return;
+      }
+
+      const validCategories = ['Gemstones', 'Rudraksha', 'Yantra', 'Astrology Books', 'Spiritual Accessories'];
+      if (!category || !validCategories.includes(category)) {
+        res.status(400).json({ success: false, message: 'Please select a valid product category.' });
+        return;
+      }
+
+      const product = await CosmicProduct.create({
+        name: String(name).trim(),
+        shortDescription: String(shortDescription).trim(),
+        pricePaise: Math.round(numericPrice * 100),
+        mrpPaise: Math.round(numericMrp * 100),
+        badge: badge || 'None',
+        category,
+        imageUrl: image,
+        createdBy: req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined,
+      });
+
+      clearStoreCache();
+
+      await recordAuditAction(
+        req,
+        'CREATE_PRODUCT',
+        'PRODUCT',
+        product._id.toString(),
+        { name: product.name, pricePaise: product.pricePaise, badge: product.badge }
+      );
+
+      res.status(201).json({
+        success: true,
+        message: `Product "${product.name}" created successfully.`,
+        data: {
+          id: product._id.toString(),
+          name: product.name,
+          shortDescription: product.shortDescription,
+          priceRupees: product.pricePaise / 100,
+          mrpRupees: product.mrpPaise / 100,
+          discountPercent: product.discountPercent,
+          badge: product.badge,
+          category: product.category,
+          imageUrl: product.imageUrl,
+          isActive: product.isActive,
+          createdAt: product.createdAt,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 12b. Get All Cosmic Store Products (Admin)
+   */
+  public async getProducts(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const search = (req.query.search as string || '').trim();
+      const category = (req.query.category as string || '').trim();
+      const inStock = req.query.inStock as string;
+      const isActive = req.query.isActive as string;
+
+      const query: Record<string, any> = {};
+      if (search) {
+        query.$or = [
+          { name: { $regex: search, $options: 'i' } },
+          { shortDescription: { $regex: search, $options: 'i' } },
+        ];
+      }
+      if (category && category !== 'All') {
+        query.category = category;
+      }
+      if (inStock === 'true') {
+        query.inStock = true;
+      } else if (inStock === 'false') {
+        query.inStock = false;
+      }
+      if (isActive === 'true') {
+        query.isActive = true;
+      } else if (isActive === 'false') {
+        query.isActive = false;
+      }
+
+      const [total, products, totalAll, inStockCount, activeCount] = await Promise.all([
+        CosmicProduct.countDocuments(query),
+        CosmicProduct.find(query)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit),
+        CosmicProduct.countDocuments({}),
+        CosmicProduct.countDocuments({ inStock: true }),
+        CosmicProduct.countDocuments({ isActive: true }),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          products: products.map((p) => ({
+            id: p._id.toString(),
+            name: p.name,
+            shortDescription: p.shortDescription,
+            priceRupees: p.pricePaise / 100,
+            mrpRupees: p.mrpPaise / 100,
+            discountPercent: p.discountPercent,
+            badge: p.badge,
+            category: p.category,
+            imageUrl: p.imageUrl,
+            isActive: p.isActive,
+            inStock: p.inStock ?? true,
+            createdAt: p.createdAt,
+          })),
+          metrics: {
+            totalProducts: totalAll,
+            inStockCount,
+            outOfStockCount: totalAll - inStockCount,
+            activeCount,
+          },
+          pagination: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit) || 1,
+          },
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 12c. Delete Cosmic Store Product
+   */
+  public async deleteProduct(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, message: 'Invalid product ID format.' });
+        return;
+      }
+
+      const product = await CosmicProduct.findByIdAndDelete(id);
+      if (!product) {
+        res.status(404).json({ success: false, message: 'Product not found.' });
+        return;
+      }
+
+      clearStoreCache();
+
+      await recordAuditAction(
+        req,
+        'DELETE_PRODUCT',
+        'PRODUCT',
+        id,
+        { name: product.name }
+      );
+
+      res.json({
+        success: true,
+        message: `Product "${product.name}" deleted successfully.`,
+        data: { id },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 12d. Toggle Product Active/Inactive
+   */
+  public async toggleProductStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { isActive } = req.body;
+
+      if (typeof isActive !== 'boolean') {
+        res.status(400).json({ success: false, message: '"isActive" must be a boolean.' });
+        return;
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, message: 'Invalid product ID format.' });
+        return;
+      }
+
+      const product = await CosmicProduct.findById(id);
+      if (!product) {
+        res.status(404).json({ success: false, message: 'Product not found.' });
+        return;
+      }
+
+      clearStoreCache();
+
+      product.isActive = isActive;
+      await product.save();
+
+      await recordAuditAction(
+        req,
+        'TOGGLE_PRODUCT_STATUS',
+        'PRODUCT',
+        id,
+        { name: product.name, isActive }
+      );
+
+      res.json({
+        success: true,
+        message: `Product "${product.name}" is now ${isActive ? 'active' : 'inactive'}.`,
+        data: {
+          id: product._id.toString(),
+          isActive: product.isActive,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 12e. Toggle Product Stock (In-Stock / Out-of-Stock)
+   */
+  public async toggleProductStock(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { inStock } = req.body;
+
+      if (typeof inStock !== 'boolean') {
+        res.status(400).json({ success: false, message: '"inStock" must be a boolean.' });
+        return;
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, message: 'Invalid product ID format.' });
+        return;
+      }
+
+      const product = await CosmicProduct.findById(id);
+      if (!product) {
+        res.status(404).json({ success: false, message: 'Product not found.' });
+        return;
+      }
+
+      clearStoreCache();
+
+      product.inStock = inStock;
+      await product.save();
+
+      await recordAuditAction(
+        req,
+        'TOGGLE_PRODUCT_STOCK',
+        'PRODUCT',
+        id,
+        { name: product.name, inStock }
+      );
+
+      res.json({
+        success: true,
+        message: `Product "${product.name}" is now ${inStock ? 'in stock' : 'out of stock'}.`,
+        data: {
+          id: product._id.toString(),
+          inStock: product.inStock,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 12f. Update Cosmic Store Product
+   */
+  public async updateProduct(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { name, shortDescription, price, mrp, badge, category, image, inStock, isActive } = req.body;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, message: 'Invalid product ID format.' });
+        return;
+      }
+
+      const product = await CosmicProduct.findById(id);
+      if (!product) {
+        res.status(404).json({ success: false, message: 'Product not found.' });
+        return;
+      }
+
+      if (name !== undefined) {
+        if (!String(name).trim()) {
+          res.status(400).json({ success: false, message: 'Product name cannot be empty.' });
+          return;
+        }
+        product.name = String(name).trim();
+      }
+
+      if (shortDescription !== undefined) {
+        if (!String(shortDescription).trim()) {
+          res.status(400).json({ success: false, message: 'Short description cannot be empty.' });
+          return;
+        }
+        product.shortDescription = String(shortDescription).trim();
+      }
+
+      if (price !== undefined) {
+        const numPrice = Number(price);
+        if (!Number.isFinite(numPrice) || numPrice <= 0) {
+          res.status(400).json({ success: false, message: 'Selling price must be positive.' });
+          return;
+        }
+        product.pricePaise = Math.round(numPrice * 100);
+      }
+
+      if (mrp !== undefined) {
+        const numMrp = Number(mrp);
+        if (!Number.isFinite(numMrp) || numMrp < (product.pricePaise / 100)) {
+          res.status(400).json({ success: false, message: 'MRP must be greater than or equal to selling price.' });
+          return;
+        }
+        product.mrpPaise = Math.round(numMrp * 100);
+      }
+
+      if (category !== undefined) {
+        const validCategories = ['Gemstones', 'Rudraksha', 'Yantra', 'Astrology Books', 'Spiritual Accessories'];
+        if (!validCategories.includes(category)) {
+          res.status(400).json({ success: false, message: 'Invalid product category.' });
+          return;
+        }
+        product.category = category;
+      }
+
+      if (badge !== undefined) {
+        product.badge = badge || 'None';
+      }
+
+      if (image && typeof image === 'string' && image.trim()) {
+        product.imageUrl = image;
+      }
+
+      if (inStock !== undefined && typeof inStock === 'boolean') {
+        product.inStock = inStock;
+      }
+
+      if (isActive !== undefined && typeof isActive === 'boolean') {
+        product.isActive = isActive;
+      }
+
+      await product.save();
+      clearStoreCache();
+
+      await recordAuditAction(
+        req,
+        'UPDATE_PRODUCT',
+        'PRODUCT',
+        id,
+        { name: product.name, pricePaise: product.pricePaise, badge: product.badge }
+      );
+
+      res.json({
+        success: true,
+        message: `Product "${product.name}" updated successfully.`,
+        data: {
+          id: product._id.toString(),
+          name: product.name,
+          shortDescription: product.shortDescription,
+          priceRupees: product.pricePaise / 100,
+          mrpRupees: product.mrpPaise / 100,
+          discountPercent: product.discountPercent,
+          badge: product.badge,
+          category: product.category,
+          imageUrl: product.imageUrl,
+          inStock: product.inStock,
+          isActive: product.isActive,
+          createdAt: product.createdAt,
+        },
       });
     } catch (err) {
       next(err);
