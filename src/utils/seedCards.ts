@@ -951,6 +951,10 @@ export const APPROVED_55_CARDS: ICardSeedData[] = [
 ];
 
 export async function seedCardDefinitions(): Promise<void> {
+  const existingCount = await CardDefinition.countDocuments();
+  if (existingCount >= 55) {
+    return;
+  }
   console.log('🌱 Seeding 55 approved Parrot Cards definitions into database...');
   for (const card of APPROVED_55_CARDS) {
     const cardId = `${card.suit.toUpperCase()}_${card.rank.replace(/\s+/g, '_')}_${card.position}`;

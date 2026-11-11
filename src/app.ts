@@ -57,9 +57,10 @@ app.use('/api', apiRateLimiter);
 // REST API V1 routes
 app.use('/api/v1', apiRoutes);
 
-// Root greeting
-app.get('/', (req: Request, res: Response) => {
+// Health & Info endpoints
+app.get(['/', '/api', '/api/health'], (req: Request, res: Response) => {
   res.json({
+    status: 'healthy',
     name: 'Parrot Cards Vedic Astrological Engine',
     tagline: 'Draw the deck your birth sky dealt you.',
     version: '1.0.0',

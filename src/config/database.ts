@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 import { ENV } from './env';
 
 export async function connectDB(uri?: string): Promise<typeof mongoose> {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
   try {
     mongoose.set('strictQuery', true);
     const isTest = process.env.NODE_ENV === 'test' || ENV.NODE_ENV === 'test';
@@ -15,7 +18,7 @@ export async function connectDB(uri?: string): Promise<typeof mongoose> {
     return conn;
   } catch (error) {
     console.error('❌ MongoDB Connection Error:', error);
-    if (ENV.NODE_ENV !== 'test') {
+    if (ENV.NODE_ENV !== 'test' && !process.env.VERCEL) {
       process.exit(1);
     }
     throw error;
