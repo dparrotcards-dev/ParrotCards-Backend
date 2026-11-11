@@ -18,21 +18,28 @@ app.use(
 );
 
 // CORS configuration with credentials support
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps or curl) or matching frontend
-      if (!origin || origin === ENV.FRONTEND_URL || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-        callback(null, true);
-      } else {
-        callback(null, true); // Permissive in dev, or specify exact origin
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Session-Id', 'X-Razorpay-Signature'],
-  })
-);
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps or curl) or matching frontend / Vercel deployments
+    if (
+      !origin ||
+      origin === ENV.FRONTEND_URL ||
+      origin.endsWith('.vercel.app') ||
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1')
+    ) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Permissive fallback
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Guest-Session-Id', 'X-Razorpay-Signature'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Logging
 if (ENV.NODE_ENV !== 'test') {
