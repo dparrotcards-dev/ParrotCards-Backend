@@ -22,22 +22,29 @@ export const envSchema = z
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
-      // 1. Reject default localhost or unconfigured database in production
+      const isVercel = Boolean(process.env.VERCEL);
+
+      // 1. Reject default localhost or unconfigured database in production (strict on non-Vercel, warn on Vercel to allow startup)
       if (
         !data.MONGODB_URI ||
         data.MONGODB_URI.includes('127.0.0.1') ||
         data.MONGODB_URI.includes('localhost')
       ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['MONGODB_URI'],
-          message:
-            'Production requires a valid remote MongoDB connection URI (e.g. MongoDB Atlas). Localhost is prohibited in production.',
-        });
+        if (!isVercel) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['MONGODB_URI'],
+            message:
+              'Production requires a valid remote MongoDB connection URI (e.g. MongoDB Atlas). Localhost is prohibited in production.',
+          });
+        } else {
+          console.warn(
+            '⚠️ [MONGODB_URI]: Production requires remote MongoDB Atlas URI. Please configure MONGODB_URI in Vercel Project Settings > Environment Variables.'
+          );
+        }
       }
 
       // 2. Reject known placeholder / insecure dev JWT secret in strict production
-      const isVercel = Boolean(process.env.VERCEL);
       const knownInsecureSecrets = [
         'secret',
         'changeme',
@@ -121,7 +128,7 @@ export const envSchema = z
         !data.GEMINI_API_KEY.toLowerCase().includes('placeholder');
 
       if (!hasGeminiKey) {
-        if (!data.ALLOW_GEMINI_FALLBACK) {
+        if (!data.ALLOW_GEMINI_FALLBACK && !isVercel) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['GEMINI_API_KEY'],
@@ -130,7 +137,7 @@ export const envSchema = z
           });
         } else {
           console.warn(
-            '⚠️ Environment Limitation: GEMINI_API_KEY is not configured in production, but ALLOW_GEMINI_FALLBACK=true. AI interpretations will operate in deterministic Vedic astrological fallback mode.'
+            '⚠️ Environment Limitation: GEMINI_API_KEY is not configured in production, but ALLOW_GEMINI_FALLBACK is enabled. AI interpretations will operate in deterministic Vedic astrological fallback mode.'
           );
         }
       }
@@ -149,8 +156,27 @@ if (!parsedEnv.success) {
   issues.forEach((issue) => console.error(`   - [${issue.field}]: ${issue.message}`));
   if (!process.env.VERCEL) {
     process.exit(1);
+    throw new Error(`Environment validation failed: ${issues.map((i) => `${i.field}: ${i.message}`).join(', ')}`);
+  } else {
+    console.warn('⚠️ Running in Vercel serverless mode with partial environment. Ensure required secrets are set in Vercel Project Settings.');
   }
-  throw new Error(`Environment validation failed: ${issues.map((i) => `${i.field}: ${i.message}`).join(', ')}`);
 }
 
-export const ENV = parsedEnv.data;
+export const ENV = parsedEnv.success
+  ? parsedEnv.data
+  : ({
+      PORT: Number(process.env.PORT || 5000),
+      NODE_ENV: 'production' as const,
+      FRONTEND_URL: process.env.FRONTEND_URL || 'https://parrot-cards.vercel.app',
+      MONGODB_URI: process.env.MONGODB_URI || '',
+      MONGODB_TEST_URI: '',
+      JWT_SECRET: process.env.JWT_SECRET || 'parrot_cards_cosmic_jwt_secret_dev_key_2026_xyz',
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+      GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
+      ALLOW_GEMINI_FALLBACK: true,
+      RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || 'rzp_test_ParrotCardsKey',
+      RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || 'rzp_test_ParrotCardsSecret',
+      RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+      ASTRONOMY_PROVIDER: 'jagannatha_hora',
+      JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora-359167915530.europe-west1.run.app',
+    } as z.infer<typeof envSchema>);

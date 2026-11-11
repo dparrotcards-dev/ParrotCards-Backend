@@ -7,6 +7,9 @@ import { ENV } from './config/env';
 import apiRoutes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { apiRateLimiter } from './middleware/rateLimiter';
+import { connectDB } from './config/database';
+import { seedCardDefinitions } from './utils/seedCards';
+import { seedAdminUser } from './utils/seedAdmin';
 
 export const app = express();
 
@@ -58,13 +61,7 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Rate limiting on all API routes
-app.use('/api', apiRateLimiter);
-
-// REST API V1 routes
-app.use('/api/v1', apiRoutes);
-
-// Health & Info endpoints
+// Health & Info endpoints (immediate 200 OK without waiting for DB)
 app.get(['/', '/api', '/api/health'], (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
@@ -75,5 +72,53 @@ app.get(['/', '/api', '/api/health'], (req: Request, res: Response) => {
   });
 });
 
+// Auto-connect to database in serverless environments (Vercel)
+let isConnected = false;
+let isSeeded = false;
+
+app.use(async (req: Request, res: Response, next) => {
+  if (!isConnected) {
+    try {
+      await connectDB();
+      isConnected = true;
+    } catch (dbErr: any) {
+      console.error('MongoDB serverless connection error:', dbErr);
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection failed. Please ensure MONGODB_URI is set in Vercel Environment Variables.',
+        error: ENV.NODE_ENV === 'production' ? undefined : dbErr?.message,
+      });
+    }
+  }
+
+  if (!isSeeded) {
+    try {
+      await seedCardDefinitions();
+      await seedAdminUser();
+    } catch (seedErr) {
+      console.warn('Serverless seeding warning:', seedErr);
+    }
+    isSeeded = true;
+  }
+
+  next();
+});
+
+// Rate limiting on all API routes
+app.use('/api', apiRateLimiter);
+
+// REST API V1 routes
+app.use('/api/v1', apiRoutes);
+
 // Centralized error handling middleware
 app.use(errorHandler);
+
+// Default export for Vercel Serverless Function & Express
+export default app;
+
+// CommonJS compatibility for Vercel runtime
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = app;
+  module.exports.default = app;
+  module.exports.app = app;
+}
