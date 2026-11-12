@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import { ENV } from './config/env';
 import apiRoutes from './routes';
+import { webhookRouter } from './routes/paymentRoutes';
 import { errorHandler } from './middleware/errorHandler';
 import { apiRateLimiter } from './middleware/rateLimiter';
 import { connectDB } from './config/database';
@@ -106,6 +107,9 @@ app.use(async (req: Request, res: Response, next) => {
 
 // Rate limiting on all API routes
 app.use('/api', apiRateLimiter);
+
+// Canonical Razorpay webhook endpoint
+app.use('/api/webhooks', webhookRouter);
 
 // REST API V1 routes
 app.use('/api/v1', apiRoutes);
