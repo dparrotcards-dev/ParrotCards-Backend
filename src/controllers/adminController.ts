@@ -1195,7 +1195,7 @@ export class AdminController {
         data: {
           provider: {
             name: ENV.ASTRONOMY_PROVIDER,
-            serviceUrl: ENV.JAGANNATHA_HORA_API_URL,
+            serviceUrl: ENV.PYJHORA_API_URL || 'http://127.0.0.1:8000',
             status: 'CONNECTED',
           },
           telemetry: {
@@ -1362,7 +1362,7 @@ export class AdminController {
           },
           astronomy: {
             provider: ENV.ASTRONOMY_PROVIDER,
-            url: ENV.JAGANNATHA_HORA_API_URL,
+            url: ENV.PYJHORA_API_URL || 'http://127.0.0.1:8000',
             status: 'OPERATIONAL',
           },
           razorpay: {

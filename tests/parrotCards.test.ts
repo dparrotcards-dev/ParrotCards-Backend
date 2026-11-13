@@ -1563,8 +1563,8 @@ describe('🌌 Parrot Cards Full Test Suite', () => {
         RAZORPAY_KEY_ID: 'rzp_live_real_key_12345',
         RAZORPAY_KEY_SECRET: 'real_secret_1234567890',
         RAZORPAY_WEBHOOK_SECRET: 'rzp_test_webhook_secret', // Insecure test placeholder!
-        ASTRONOMY_PROVIDER: 'jagannatha_hora',
-        JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora.example.com',
+        ASTRONOMY_PROVIDER: 'pyjhora',
+        PYJHORA_API_URL: 'http://127.0.0.1:8000',
         GEMINI_API_KEY: 'valid_gemini_key_123',
       };
 
@@ -1583,8 +1583,8 @@ describe('🌌 Parrot Cards Full Test Suite', () => {
         RAZORPAY_KEY_ID: 'rzp_test_dummy_key_12345', // Prohibited in prod!
         RAZORPAY_KEY_SECRET: 'real_secret_1234567890',
         RAZORPAY_WEBHOOK_SECRET: 'real_webhook_secret_123456789',
-        ASTRONOMY_PROVIDER: 'jagannatha_hora',
-        JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora.example.com',
+        ASTRONOMY_PROVIDER: 'pyjhora',
+        PYJHORA_API_URL: 'http://127.0.0.1:8000',
         GEMINI_API_KEY: 'valid_gemini_key_123',
       };
 
@@ -1604,8 +1604,8 @@ describe('🌌 Parrot Cards Full Test Suite', () => {
         RAZORPAY_KEY_ID: 'rzp_live_real_key_12345',
         RAZORPAY_KEY_SECRET: 'real_secret_1234567890',
         RAZORPAY_WEBHOOK_SECRET: 'real_webhook_secret_123456789',
-        ASTRONOMY_PROVIDER: 'jagannatha_hora',
-        JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora.example.com',
+        ASTRONOMY_PROVIDER: 'pyjhora',
+        PYJHORA_API_URL: 'http://127.0.0.1:8000',
         GEMINI_API_KEY: '', // Missing!
         ALLOW_GEMINI_FALLBACK: 'false',
       });
@@ -1622,8 +1622,8 @@ describe('🌌 Parrot Cards Full Test Suite', () => {
         RAZORPAY_KEY_ID: 'rzp_live_real_key_12345',
         RAZORPAY_KEY_SECRET: 'real_secret_1234567890',
         RAZORPAY_WEBHOOK_SECRET: 'real_webhook_secret_123456789',
-        ASTRONOMY_PROVIDER: 'jagannatha_hora',
-        JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora.example.com',
+        ASTRONOMY_PROVIDER: 'pyjhora',
+        PYJHORA_API_URL: 'http://127.0.0.1:8000',
         GEMINI_API_KEY: '',
         ALLOW_GEMINI_FALLBACK: 'true',
       });

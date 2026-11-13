@@ -17,8 +17,9 @@ export const envSchema = z
     RAZORPAY_KEY_ID: z.string().default('rzp_test_ParrotCardsKey'),
     RAZORPAY_KEY_SECRET: z.string().default('rzp_test_ParrotCardsSecret'),
     RAZORPAY_WEBHOOK_SECRET: z.string().default('rzp_test_webhook_secret'),
-    ASTRONOMY_PROVIDER: z.string().default('jagannatha_hora'),
-    JAGANNATHA_HORA_API_URL: z.string().default('https://jagannatha-hora-359167915530.europe-west1.run.app'),
+    ASTRONOMY_PROVIDER: z.string().default('pyjhora'),
+    PYJHORA_API_URL: z.string().default('http://127.0.0.1:8000'),
+    JAGANNATHA_HORA_API_URL: z.string().optional().default('http://127.0.0.1:8000'),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
@@ -177,6 +178,7 @@ export const ENV = parsedEnv.success
       RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || 'rzp_test_ParrotCardsKey',
       RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || 'rzp_test_ParrotCardsSecret',
       RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
-      ASTRONOMY_PROVIDER: 'jagannatha_hora',
-      JAGANNATHA_HORA_API_URL: 'https://jagannatha-hora-359167915530.europe-west1.run.app',
+      ASTRONOMY_PROVIDER: 'pyjhora',
+      PYJHORA_API_URL: process.env.PYJHORA_API_URL || 'http://127.0.0.1:8000',
+      JAGANNATHA_HORA_API_URL: process.env.PYJHORA_API_URL || 'http://127.0.0.1:8000',
     } as z.infer<typeof envSchema>);

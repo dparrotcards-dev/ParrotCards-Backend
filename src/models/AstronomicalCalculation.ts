@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IAstronomicalCalculation extends Document {
   profileId: mongoose.Types.ObjectId;
-  provider: string; // 'jagannatha_hora' | 'local_verified'
+  provider: string; // 'pyjhora' | 'local_verified'
   calculationVersion: string;
   inputSnapshot: {
     date: string;

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { IAstronomyProvider, HoroscopeCalculationResult } from './IAstronomyProvider';
-import { JagannathaHoraProvider } from './JagannathaHoraProvider';
+import { PyJHoraProvider } from './PyJHoraProvider';
 import { LocalMockAstronomyProvider } from './LocalMockAstronomyProvider';
 import { AstronomicalCalculation, IAstronomicalCalculation } from '../../models/AstronomicalCalculation';
 import { IBirthInput, IAstronomicalPlacement } from '../../types';
@@ -36,7 +36,7 @@ export class AstronomyService {
     if (selected === 'mock' || selected === 'local') {
       this.primaryProvider = new LocalMockAstronomyProvider();
     } else {
-      this.primaryProvider = new JagannathaHoraProvider();
+      this.primaryProvider = new PyJHoraProvider();
     }
     this.fallbackProvider = new LocalMockAstronomyProvider();
   }

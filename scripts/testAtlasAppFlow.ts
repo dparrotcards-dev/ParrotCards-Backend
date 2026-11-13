@@ -90,7 +90,7 @@ async function testAppFlowOnAtlas() {
   console.log(`   ✓ Calculation 2 retrieved from Atlas in ${duration2}ms (ID: ${calc2._id})`);
 
   if (calc1._id.toString() === calc2._id.toString() && duration2 < 500) {
-    console.log(`   ✅ Cache Verification: SUBSEQUENT LOADS RETRIEVE DIRECTLY FROM ATLAS WITHOUT RE-CALLING JAGANNATHA HORA! (Duration: ${duration2}ms vs ${duration1}ms)`);
+    console.log(`   ✅ Cache Verification: SUBSEQUENT LOADS RETRIEVE DIRECTLY FROM ATLAS WITHOUT RE-CALLING PYJHORA! (Duration: ${duration2}ms vs ${duration1}ms)`);
   } else {
     console.error('   ❌ Cache Verification Failed!');
   }

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import axios from 'axios';
-import { JagannathaHoraProvider } from '../src/integrations/astronomy/JagannathaHoraProvider';
+import { PyJHoraProvider } from '../src/integrations/astronomy/PyJHoraProvider';
 import { AstronomyService } from '../src/integrations/astronomy/AstronomyService';
 import { BirthProfile } from '../src/models/BirthProfile';
 import { AstronomicalCalculation } from '../src/models/AstronomicalCalculation';
@@ -13,10 +13,10 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 async function runLiveVerification() {
   console.log('================================================================');
-  console.log('🌌 LIVE JAGANNATHA HORA API & SAFETY REQUIREMENTS VERIFICATION');
+  console.log('🌌 LIVE PYJHORA ASTROLOGY ENGINE & ACCURACY VERIFICATION');
   console.log('================================================================\n');
 
-  const liveApiUrl = process.env.JAGANNATHA_HORA_API_URL;
+  const liveApiUrl = process.env.PYJHORA_API_URL || process.env.JAGANNATHA_HORA_API_URL || 'http://127.0.0.1:8000';
   console.log(`🌐 Live Provider Endpoint: ${liveApiUrl}`);
 
   const controlledBirthInput = {
@@ -30,10 +30,10 @@ async function runLiveVerification() {
   };
 
   // -------------------------------------------------------------
-  // STEP 2: TEST REAL JAGANNATHA HORA API INTEGRATION
+  // STEP 2: TEST REAL PYJHORA API INTEGRATION
   // -------------------------------------------------------------
-  console.log('\n--- 2. REAL JAGANNATHA HORA API CALL ---');
-  const provider = new JagannathaHoraProvider(liveApiUrl);
+  console.log('\n--- 2. REAL PYJHORA API CALL ---');
+  const provider = new PyJHoraProvider(liveApiUrl);
   const startTime = Date.now();
   console.log(`📡 Sending live horoscope calculation request for:`, controlledBirthInput);
 
@@ -46,7 +46,7 @@ async function runLiveVerification() {
   }
 
   const durationMs = Date.now() - startTime;
-  console.log(`✅ Live Jagannatha Hora API responded in ${durationMs}ms`);
+  console.log(`✅ Live PyJHora API responded in ${durationMs}ms`);
   console.log(`📦 Provider reported version: ${liveResult.calculationVersion}`);
 
   const rawPayload = liveResult.rawHoroscope;
