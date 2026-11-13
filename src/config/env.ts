@@ -18,8 +18,17 @@ export const envSchema = z
     RAZORPAY_KEY_SECRET: z.string().default('rzp_test_ParrotCardsSecret'),
     RAZORPAY_WEBHOOK_SECRET: z.string().default('rzp_test_webhook_secret'),
     ASTRONOMY_PROVIDER: z.string().default('pyjhora'),
-    PYJHORA_API_URL: z.string().default('http://127.0.0.1:8000'),
-    JAGANNATHA_HORA_API_URL: z.string().optional().default('http://127.0.0.1:8000'),
+    PYJHORA_API_URL: z.string().default(
+      process.env.PYJHORA_API_URL ||
+      (process.env.VERCEL || process.env.NODE_ENV === 'production'
+        ? 'https://parrot-cards-python-backend.vercel.app'
+        : 'http://127.0.0.1:8000')
+    ),
+    JAGANNATHA_HORA_API_URL: z.string().optional().default(
+      process.env.VERCEL || process.env.NODE_ENV === 'production'
+        ? 'https://parrot-cards-python-backend.vercel.app'
+        : 'http://127.0.0.1:8000'
+    ),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

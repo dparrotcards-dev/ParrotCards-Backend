@@ -121,8 +121,12 @@ app.use(errorHandler);
 export default app;
 
 // CommonJS compatibility for Vercel runtime
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = app;
-  module.exports.default = app;
-  module.exports.app = app;
+try {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = app;
+    module.exports.default = app;
+    module.exports.app = app;
+  }
+} catch {
+  // ESM environment ignored safely
 }

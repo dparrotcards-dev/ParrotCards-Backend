@@ -14,7 +14,16 @@ export class PyJHoraProvider implements IAstronomyProvider {
   private apiUrl: string;
 
   constructor(apiUrl?: string) {
-    this.apiUrl = apiUrl || ENV.PYJHORA_API_URL || ENV.JAGANNATHA_HORA_API_URL || 'http://127.0.0.1:8000';
+    const isProdOrVercel = Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
+    const cloudFallback = 'https://parrot-cards-python-backend.vercel.app';
+    const envUrl = ENV.PYJHORA_API_URL || ENV.JAGANNATHA_HORA_API_URL;
+
+    // In production / Vercel cloud, auto-route to our live PyJHora engine if localhost is given
+    if (isProdOrVercel && (!envUrl || envUrl.includes('127.0.0.1') || envUrl.includes('localhost'))) {
+      this.apiUrl = apiUrl || cloudFallback;
+    } else {
+      this.apiUrl = apiUrl || envUrl || 'http://127.0.0.1:8000';
+    }
   }
 
   public async calculateHoroscope(birthDetails: IBirthInput): Promise<HoroscopeCalculationResult> {
