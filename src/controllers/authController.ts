@@ -50,6 +50,36 @@ export class AuthController {
     });
   }
 
+  public async forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== 'string') {
+        res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+        return;
+      }
+
+      const result = await authService.forgotPassword(email);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) {
+        res.status(400).json({ success: false, message: 'Token and new password are required.' });
+        return;
+      }
+
+      const result = await authService.resetPassword(token, newPassword);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
   public async getMe(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user) {
