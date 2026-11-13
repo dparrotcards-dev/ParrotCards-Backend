@@ -16,9 +16,14 @@ export class PyJHoraProvider implements IAstronomyProvider {
   constructor(apiUrl?: string) {
     const isProdOrVercel = Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
     const cloudFallback = 'https://parrot-cards-python-backend.vercel.app';
-    const envUrl = ENV.PYJHORA_API_URL || ENV.JAGANNATHA_HORA_API_URL;
+    
+    // Strictly ignore legacy external Jagannatha Hora cloud URLs
+    let envUrl = ENV.PYJHORA_API_URL;
+    if (envUrl && (envUrl.includes('jagannatha-hora') || envUrl.includes('europe-west1'))) {
+      envUrl = '';
+    }
 
-    // In production / Vercel cloud, auto-route to our live PyJHora engine if localhost is given
+    // In production / Vercel cloud, auto-route to our live PyJHora engine if localhost or empty
     if (isProdOrVercel && (!envUrl || envUrl.includes('127.0.0.1') || envUrl.includes('localhost'))) {
       this.apiUrl = apiUrl || cloudFallback;
     } else {
