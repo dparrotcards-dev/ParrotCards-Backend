@@ -82,12 +82,11 @@ export class AuthService {
     await user.save();
 
     // Dispatch email
-    const emailResult = await emailService.sendPasswordResetEmail(user.email, user.name, rawToken);
+    await emailService.sendPasswordResetEmail(user.email, user.name, rawToken);
 
     return {
       success: true,
       message: 'A password reset link has been dispatched to your email address.',
-      devLink: emailResult.devLink,
     };
   }
 
