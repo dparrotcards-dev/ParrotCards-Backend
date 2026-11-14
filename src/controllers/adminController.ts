@@ -963,15 +963,12 @@ export class AdminController {
 
       // Status filtering
       if (statusFilter && statusFilter !== 'ALL') {
-        if (statusFilter === 'PAID') {
+        if (statusFilter === 'PAID' || statusFilter === 'SUCCESS') {
           paymentQuery.status = 'PAID';
           storeQuery.paymentStatus = 'PAID';
         } else if (statusFilter === 'FAILED') {
-          paymentQuery.status = 'FAILED';
-          storeQuery.paymentStatus = 'FAILED';
-        } else if (statusFilter === 'CREATED' || statusFilter === 'PENDING') {
-          paymentQuery.status = 'CREATED';
-          storeQuery.paymentStatus = 'PENDING';
+          paymentQuery.status = { $in: ['FAILED', 'CREATED', 'EXPIRED'] };
+          storeQuery.paymentStatus = { $in: ['FAILED', 'PENDING'] };
         } else if (statusFilter === 'REFUNDED') {
           paymentQuery.status = 'REFUNDED';
           storeQuery.$or = [{ paymentStatus: 'REFUNDED' }, { status: 'Cancelled' }];
@@ -1152,7 +1149,7 @@ export class AdminController {
           amountRupees: (o.amountPaise || 0) / 100,
           currency: o.currency || 'INR',
           paymentMethod: matchedTxn?.rawResponse?.method || 'UPI',
-          status: o.status,
+          status: o.status === 'PAID' ? 'PAID' : (o.status === 'REFUNDED' ? 'REFUNDED' : 'FAILED'),
           verifiedAt: matchedTxn?.verifiedAt || null,
           createdAt: o.createdAt,
         };
@@ -1252,7 +1249,7 @@ export class AdminController {
           },
         ]),
         PaymentOrder.countDocuments({
-          status: 'FAILED',
+          status: { $in: ['FAILED', 'CREATED', 'EXPIRED'] },
           userId: { $in: realUserIds },
           razorpayOrderId: { $not: /^order_sim_/i },
           orderId: { $not: /^rcpt_wh_/i },
