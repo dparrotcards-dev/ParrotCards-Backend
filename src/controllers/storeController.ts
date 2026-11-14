@@ -3,6 +3,7 @@ import Razorpay from 'razorpay';
 import { Request, Response, NextFunction } from 'express';
 import { CosmicProduct } from '../models/CosmicProduct';
 import { StoreOrder } from '../models/StoreOrder';
+import { User } from '../models/User';
 import { ENV } from '../config/env';
 
 interface CacheEntry {
@@ -274,8 +275,16 @@ export class StoreController {
       const { items, totalAmount, shippingAddress, paymentMethod, paymentId } = req.body;
       const orderId = `#PC${Math.floor(70000 + Math.random() * 20000)}`;
 
+      let resolvedUserId = (req as any).user?.id;
+      const orderEmail = (shippingAddress?.email || '').toLowerCase().trim();
+      if (!resolvedUserId && orderEmail) {
+        const matched = await User.findOne({ email: orderEmail });
+        if (matched) resolvedUserId = matched._id;
+      }
+
       const newOrder = await StoreOrder.create({
         orderId,
+        userId: resolvedUserId,
         customerName: shippingAddress?.fullName || 'Seeker',
         customerEmail: shippingAddress?.email || '',
         customerPhone: shippingAddress?.phone || '',

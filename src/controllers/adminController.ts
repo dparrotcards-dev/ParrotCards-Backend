@@ -63,8 +63,9 @@ export class AdminController {
         totalUsers,
         totalDecks,
         totalCalculations,
-        totalOrders,
-        capturedOrders,
+        totalStoreOrders,
+        capturedStoreOrders,
+        storeOrderStatuses,
         activePassesCount,
         aiInterpretationsCount,
         fallbackInterpretationsCount,
@@ -77,8 +78,11 @@ export class AdminController {
         User.countDocuments(),
         PersonalizedDeck.countDocuments(),
         AstronomicalCalculation.countDocuments(),
-        PaymentOrder.countDocuments(),
-        PaymentOrder.find({ status: 'PAID' }),
+        StoreOrder.countDocuments(),
+        StoreOrder.find({ paymentStatus: 'PAID' }),
+        StoreOrder.aggregate([
+          { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]),
         DeckPass.countDocuments({ isActive: true, expiresAt: { $gt: now } }),
         CardInterpretation.countDocuments({ isAiGenerated: true }),
         CardInterpretation.countDocuments({ isAiGenerated: false }),
@@ -89,12 +93,12 @@ export class AdminController {
           .populate('profileId', 'name dateOfBirth gender city place')
           .populate('userId', 'email name'),
         StoreOrder.find().sort({ createdAt: -1 }).limit(6),
-        PaymentOrder.aggregate([
-          { $match: { status: 'PAID', createdAt: { $gte: thirtyDaysAgo } } },
+        StoreOrder.aggregate([
+          { $match: { createdAt: { $gte: thirtyDaysAgo } } },
           {
             $group: {
               _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-              revenueRupees: { $sum: { $divide: ['$amountPaise', 100] } },
+              revenueRupees: { $sum: '$totalAmountRupees' },
               count: { $sum: 1 },
             },
           },
@@ -112,8 +116,15 @@ export class AdminController {
         ]),
       ]);
 
-      const totalRevenueRupees = capturedOrders.reduce((acc, curr) => acc + ((curr.amountPaise || 0) / 100), 0);
-      const paymentSuccessRate = totalOrders > 0 ? Math.round((capturedOrders.length / totalOrders) * 100) : 100;
+      const storeStatusMap: Record<string, number> = {};
+      for (const s of storeOrderStatuses) {
+        if (s._id) {
+          storeStatusMap[String(s._id).toLowerCase()] = s.count;
+        }
+      }
+
+      const totalRevenueRupees = capturedStoreOrders.reduce((acc, curr) => acc + (curr.totalAmountRupees || 0), 0);
+      const paymentSuccessRate = totalStoreOrders > 0 ? Math.round((capturedStoreOrders.length / totalStoreOrders) * 100) : 100;
       const totalInterpretations = aiInterpretationsCount + fallbackInterpretationsCount;
       const aiGenerationRate =
         totalInterpretations > 0 ? Math.round((aiInterpretationsCount / totalInterpretations) * 100) : 100;
@@ -128,8 +139,15 @@ export class AdminController {
             totalUsers,
             totalDecks,
             totalCalculations,
-            totalOrders,
-            paidOrdersCount: capturedOrders.length,
+            totalOrders: totalStoreOrders,
+            paidOrdersCount: capturedStoreOrders.length,
+            storeStatusCounts: {
+              delivered: storeStatusMap['delivered'] || 0,
+              shipped: storeStatusMap['shipped'] || 0,
+              processing: storeStatusMap['processing'] || 0,
+              confirmed: storeStatusMap['confirmed'] || 0,
+              cancelled: storeStatusMap['cancelled'] || 0,
+            },
             paymentSuccessRate,
             totalRevenueRupees,
             activePassesCount,
@@ -228,10 +246,20 @@ export class AdminController {
         .select('-passwordHash');
 
       const userIds = users.map((u) => u._id);
+      const userEmails = users.map((u) => (u.email || '').toLowerCase().trim()).filter(Boolean);
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-      // Aggregate account activity for each page row plus the customer summary cards.
-      const [deckCounts, activePasses, unlockCounts, orderStats, totalCustomers, newCustomersLast7Days, customersWithOrders, customerSpending] = await Promise.all([
+      // Aggregate account activity for each page row plus the customer summary cards (Strictly Cosmic Store product orders).
+      const [
+        deckCounts,
+        activePasses,
+        unlockCounts,
+        storeOrderStats,
+        totalCustomers,
+        newCustomersLast7Days,
+        customersWithStoreOrders,
+        customerStoreSpending,
+      ] = await Promise.all([
         PersonalizedDeck.aggregate([
           { $match: { userId: { $in: userIds } } },
           { $group: { _id: '$userId', count: { $sum: 1 } } },
@@ -245,38 +273,76 @@ export class AdminController {
           { $match: { userId: { $in: userIds } } },
           { $group: { _id: '$userId', count: { $sum: 1 } } },
         ]),
-        PaymentOrder.aggregate([
-          { $match: { userId: { $in: userIds }, status: 'PAID' } },
-          { $group: { _id: '$userId', orderCount: { $sum: 1 }, totalSpentPaise: { $sum: '$amountPaise' } } },
+        // Aggregate StoreProduct orders per user (matching either userId or customerEmail)
+        StoreOrder.aggregate([
+          {
+            $match: {
+              $or: [
+                { userId: { $in: userIds } },
+                { customerEmail: { $in: userEmails } },
+              ],
+            },
+          },
+          {
+            $project: {
+              matchedUserKey: {
+                $cond: [
+                  { $in: ['$userId', userIds] },
+                  { $toString: '$userId' },
+                  { $toLower: '$customerEmail' },
+                ],
+              },
+              totalAmountRupees: 1,
+            },
+          },
+          {
+            $group: {
+              _id: '$matchedUserKey',
+              orderCount: { $sum: 1 },
+              totalSpentRupees: { $sum: '$totalAmountRupees' },
+            },
+          },
         ]),
         User.countDocuments({ role: 'user' }),
         User.countDocuments({ role: 'user', createdAt: { $gte: sevenDaysAgo } }),
-        PaymentOrder.distinct('userId', { status: 'PAID' }),
-        PaymentOrder.aggregate([
-          { $match: { status: 'PAID' } },
-          { $group: { _id: null, totalSpentPaise: { $sum: '$amountPaise' } } },
+        StoreOrder.distinct('customerEmail', { status: { $ne: 'Cancelled' } }),
+        StoreOrder.aggregate([
+          { $match: { status: { $ne: 'Cancelled' } } },
+          { $group: { _id: null, totalSpentRupees: { $sum: '$totalAmountRupees' } } },
         ]),
       ]);
 
       const deckCountMap = new Map(deckCounts.map((d) => [d._id.toString(), d.count]));
       const activePassSet = new Set(activePasses.map((p) => p.userId.toString()));
       const unlockCountMap = new Map(unlockCounts.map((u) => [u._id.toString(), u.count]));
-      const orderStatsMap = new Map(
-        orderStats.map((order) => [order._id.toString(), { orderCount: order.orderCount, totalSpentPaise: order.totalSpentPaise }])
-      );
+      const storeOrderMap = new Map<string, { orderCount: number; totalSpentRupees: number }>();
+      for (const stat of storeOrderStats) {
+        if (stat._id) {
+          storeOrderMap.set(String(stat._id).toLowerCase(), {
+            orderCount: stat.orderCount,
+            totalSpentRupees: stat.totalSpentRupees,
+          });
+        }
+      }
 
-      const enrichedUsers = users.map((u) => ({
-        id: u._id.toString(),
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        deckCount: deckCountMap.get(u._id.toString()) || 0,
-        hasActivePass: activePassSet.has(u._id.toString()),
-        unlockedCardsCount: unlockCountMap.get(u._id.toString()) || 0,
-        totalOrders: orderStatsMap.get(u._id.toString())?.orderCount || 0,
-        totalSpentRupees: (orderStatsMap.get(u._id.toString())?.totalSpentPaise || 0) / 100,
-        createdAt: u.createdAt,
-      }));
+      const enrichedUsers = users.map((u) => {
+        const idKey = u._id.toString();
+        const emailKey = (u.email || '').toLowerCase().trim();
+        const userOrderStat = storeOrderMap.get(idKey) || (emailKey ? storeOrderMap.get(emailKey) : null);
+
+        return {
+          id: idKey,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          deckCount: deckCountMap.get(idKey) || 0,
+          hasActivePass: activePassSet.has(idKey),
+          unlockedCardsCount: unlockCountMap.get(idKey) || 0,
+          totalOrders: userOrderStat?.orderCount || 0,
+          totalSpentRupees: userOrderStat?.totalSpentRupees || 0,
+          createdAt: u.createdAt,
+        };
+      });
 
       res.json({
         success: true,
@@ -285,8 +351,8 @@ export class AdminController {
           metrics: {
             totalCustomers,
             newCustomersLast7Days,
-            customersWithOrders: customersWithOrders.length,
-            totalCustomerSpendingRupees: (customerSpending[0]?.totalSpentPaise || 0) / 100,
+            customersWithOrders: customersWithStoreOrders.length,
+            totalCustomerSpendingRupees: customerStoreSpending[0]?.totalSpentRupees || 0,
           },
           pagination: {
             total,
@@ -318,12 +384,17 @@ export class AdminController {
         return;
       }
 
-      const [profiles, decks, passes, unlocks, orders] = await Promise.all([
+      const [profiles, decks, passes, unlocks, storeOrders] = await Promise.all([
         BirthProfile.find({ userId: user._id }).sort({ createdAt: -1 }),
         PersonalizedDeck.find({ userId: user._id }).sort({ createdAt: -1 }),
         DeckPass.find({ userId: user._id }).sort({ createdAt: -1 }),
         CardUnlock.find({ userId: user._id }).sort({ createdAt: -1 }),
-        PaymentOrder.find({ userId: user._id }).sort({ createdAt: -1 }),
+        StoreOrder.find({
+          $or: [
+            { userId: user._id },
+            { customerEmail: (user.email || '').toLowerCase().trim() },
+          ],
+        }).sort({ createdAt: -1 }),
       ]);
 
       await recordAuditAction(req, 'INSPECT_USER_DETAILS', 'USER', id, { targetUserEmail: user.email });
@@ -364,14 +435,21 @@ export class AdminController {
             cardKey: u.cardKey,
             unlockedAt: u.unlockedAt,
           })),
-          orders: orders.map((o) => ({
-            id: o._id.toString(),
-            orderId: o.orderId,
-            itemType: o.itemType,
-            amountRupees: (o.amountPaise || 0) / 100,
-            status: o.status,
-            createdAt: o.createdAt,
-          })),
+          orders: storeOrders.map((o) => {
+            const primaryProduct = o.products?.[0];
+            const productName = primaryProduct?.name
+              ? (o.products.length > 1 ? `${primaryProduct.name} +${o.products.length - 1}` : primaryProduct.name)
+              : 'Cosmic Store Product';
+
+            return {
+              id: o._id.toString(),
+              orderId: o.orderId,
+              itemType: productName,
+              amountRupees: o.totalAmountRupees || 0,
+              status: o.status,
+              createdAt: o.createdAt,
+            };
+          }),
         },
       });
     } catch (err) {
