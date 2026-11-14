@@ -51,15 +51,7 @@ export class PaymentService {
       throw err;
     }
 
-    let amountPaise = this.razorpayService.getPriceForType(itemType);
-
-    // Dynamic price lookup for card unlocks configured in admin panel
-    if (itemType === 'CARD_UNLOCK' && cardKey) {
-      const cardDef = await CardDefinition.findOne({ key: cardKey });
-      if (cardDef && cardDef.price !== undefined && cardDef.price > 0) {
-        amountPaise = Math.round(cardDef.price * 100);
-      }
-    }
+    const amountPaise = this.razorpayService.getPriceForType(itemType);
 
     const internalReceipt = `rcpt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 

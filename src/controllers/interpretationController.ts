@@ -20,8 +20,7 @@ export class InterpretationController {
       const isUnlocked = isFree || entitlementService.isCardUnlocked(key, entitlements);
 
       if (!isUnlocked) {
-        const cardDef = await CardDefinition.findOne({ key });
-        const unlockPriceRupees = cardDef?.price !== undefined ? cardDef.price : 2;
+        const unlockPriceRupees = 2;
 
         res.status(402).json({
           success: false,

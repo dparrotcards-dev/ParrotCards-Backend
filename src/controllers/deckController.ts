@@ -87,7 +87,7 @@ export class DeckController {
         const isCardFree = (entitlements.freeCardKeys || FREE_CARD_KEYS).includes(c.key);
         const isUnlocked = isCardFree || entitlementService.isCardUnlocked(c.key, entitlements);
         const cardDef = cardDefMap.get(c.key);
-        const price = isCardFree ? 0 : (cardDef?.price !== undefined ? cardDef.price : 2);
+        const price = isCardFree ? 0 : 2;
 
         const rawPlacement = (c.astronomicalPlacement || {}) as IAstronomicalPlacement;
         const placement: IAstronomicalPlacement = { ...rawPlacement };
@@ -192,7 +192,7 @@ export class DeckController {
             position: cardDef.position,
             isFree,
             isUnlocked,
-            price: isFree ? 0 : (cardDef.price !== undefined ? cardDef.price : 2),
+            price: isFree ? 0 : 2,
           },
           entitlements,
         },
