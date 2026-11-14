@@ -948,8 +948,18 @@ export class AdminController {
       const itemTypeFilter = (req.query.itemType as string || '').trim().toUpperCase();
       const search = (req.query.search as string || '').trim();
 
-      const paymentQuery: Record<string, any> = {};
-      const storeQuery: Record<string, any> = {};
+      // Strictly restrict to genuine registered users & non-simulated real orders
+      const realUsers = await User.find({}).select('_id name email role').lean();
+      const realUserIds = realUsers.map((u) => u._id);
+
+      const paymentQuery: Record<string, any> = {
+        userId: { $in: realUserIds },
+        razorpayOrderId: { $not: /^order_sim_/i },
+        orderId: { $not: /^rcpt_wh_/i },
+      };
+      const storeQuery: Record<string, any> = {
+        customerEmail: { $not: /@example\.com$/i },
+      };
 
       // Status filtering
       if (statusFilter && statusFilter !== 'ALL') {
@@ -990,6 +1000,7 @@ export class AdminController {
 
         if (includePayments) {
           const matchingUsers = await User.find({
+            _id: { $in: realUserIds },
             $or: [
               { name: { $regex: escaped, $options: 'i' } },
               { email: { $regex: escaped, $options: 'i' } },
@@ -1002,22 +1013,30 @@ export class AdminController {
           }).select('orderId');
           const matchingOrderIds = matchingTransactions.map((t) => t.orderId);
 
-          paymentQuery.$or = [
-            { orderId: { $regex: escaped, $options: 'i' } },
-            { razorpayOrderId: { $regex: escaped, $options: 'i' } },
-            { itemId: { $regex: escaped, $options: 'i' } },
-            { userId: { $in: matchingUserIds } },
-            { orderId: { $in: matchingOrderIds } },
+          paymentQuery.$and = [
+            {
+              $or: [
+                { orderId: { $regex: escaped, $options: 'i' } },
+                { razorpayOrderId: { $regex: escaped, $options: 'i' } },
+                { itemId: { $regex: escaped, $options: 'i' } },
+                { userId: { $in: matchingUserIds } },
+                { orderId: { $in: matchingOrderIds } },
+              ],
+            },
           ];
         }
 
         if (includeStore) {
-          storeQuery.$or = [
-            { orderId: { $regex: escaped, $options: 'i' } },
-            { customerName: { $regex: escaped, $options: 'i' } },
-            { customerEmail: { $regex: escaped, $options: 'i' } },
-            { customerPhone: { $regex: escaped, $options: 'i' } },
-            { 'products.name': { $regex: escaped, $options: 'i' } },
+          storeQuery.$and = [
+            {
+              $or: [
+                { orderId: { $regex: escaped, $options: 'i' } },
+                { customerName: { $regex: escaped, $options: 'i' } },
+                { customerEmail: { $regex: escaped, $options: 'i' } },
+                { customerPhone: { $regex: escaped, $options: 'i' } },
+                { 'products.name': { $regex: escaped, $options: 'i' } },
+              ],
+            },
           ];
         }
       }
@@ -1189,10 +1208,17 @@ export class AdminController {
       const startIndex = (page - 1) * limit;
       const paginatedResults = combined.slice(startIndex, startIndex + limit);
 
-      // Revenue and Count Aggregations across both collections
+      // Revenue and Count Aggregations across both collections (Strictly real users & non-simulated)
       const [paidPaymentSummary, paidStoreSummary, failedPaymentCount, failedStoreCount] = await Promise.all([
         PaymentOrder.aggregate([
-          { $match: { status: 'PAID' } },
+          {
+            $match: {
+              status: 'PAID',
+              userId: { $in: realUserIds },
+              razorpayOrderId: { $not: /^order_sim_/i },
+              orderId: { $not: /^rcpt_wh_/i },
+            },
+          },
           {
             $group: {
               _id: null,
@@ -1211,7 +1237,12 @@ export class AdminController {
           },
         ]),
         StoreOrder.aggregate([
-          { $match: { paymentStatus: 'PAID' } },
+          {
+            $match: {
+              paymentStatus: 'PAID',
+              customerEmail: { $not: /@example\.com$/i },
+            },
+          },
           {
             $group: {
               _id: null,
@@ -1220,8 +1251,16 @@ export class AdminController {
             },
           },
         ]),
-        PaymentOrder.countDocuments({ status: 'FAILED' }),
-        StoreOrder.countDocuments({ paymentStatus: 'FAILED' }),
+        PaymentOrder.countDocuments({
+          status: 'FAILED',
+          userId: { $in: realUserIds },
+          razorpayOrderId: { $not: /^order_sim_/i },
+          orderId: { $not: /^rcpt_wh_/i },
+        }),
+        StoreOrder.countDocuments({
+          paymentStatus: 'FAILED',
+          customerEmail: { $not: /@example\.com$/i },
+        }),
       ]);
 
       const cardUnlocksRevenue = paidPaymentSummary[0]?.cardUnlocksRevenue || 0;
