@@ -938,104 +938,144 @@ export class AdminController {
   }
 
   /**
-   * 5. Payments & Verified Revenue Reporting
+   * 5. Payments & Verified Revenue Reporting (Unified: Digital Unlocks, Deck Passes & Physical Store Orders)
    */
   public async getPayments(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
-      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
       const statusFilter = (req.query.status as string || '').trim().toUpperCase();
       const itemTypeFilter = (req.query.itemType as string || '').trim().toUpperCase();
       const search = (req.query.search as string || '').trim();
 
-      const query: Record<string, any> = {};
+      const paymentQuery: Record<string, any> = {};
+      const storeQuery: Record<string, any> = {};
+
+      // Status filtering
       if (statusFilter && statusFilter !== 'ALL') {
-        query.status = statusFilter;
-      }
-      if (itemTypeFilter && itemTypeFilter !== 'ALL') {
-        query.itemType = itemTypeFilter;
+        if (statusFilter === 'PAID') {
+          paymentQuery.status = 'PAID';
+          storeQuery.paymentStatus = 'PAID';
+        } else if (statusFilter === 'FAILED') {
+          paymentQuery.status = 'FAILED';
+          storeQuery.paymentStatus = 'FAILED';
+        } else if (statusFilter === 'CREATED' || statusFilter === 'PENDING') {
+          paymentQuery.status = 'CREATED';
+          storeQuery.paymentStatus = 'PENDING';
+        } else if (statusFilter === 'REFUNDED') {
+          paymentQuery.status = 'REFUNDED';
+          storeQuery.$or = [{ paymentStatus: 'REFUNDED' }, { status: 'Cancelled' }];
+        } else {
+          paymentQuery.status = statusFilter;
+          storeQuery.paymentStatus = statusFilter;
+        }
       }
 
+      // Item Type filtering
+      let includePayments = true;
+      let includeStore = true;
+
+      if (itemTypeFilter && itemTypeFilter !== 'ALL') {
+        if (itemTypeFilter === 'CARD_UNLOCK' || itemTypeFilter === 'DECK_PASS') {
+          paymentQuery.itemType = itemTypeFilter;
+          includeStore = false;
+        } else if (itemTypeFilter === 'STORE_PRODUCT' || itemTypeFilter === 'STORE_ORDER') {
+          includePayments = false;
+        }
+      }
+
+      // Search filtering
       if (search) {
-        // Safe regex escaping
         const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-        // 1. Search matching users by name or email
-        const matchingUsers = await User.find({
-          $or: [
-            { name: { $regex: escaped, $options: 'i' } },
-            { email: { $regex: escaped, $options: 'i' } },
-          ],
-        }).select('_id');
-        const matchingUserIds = matchingUsers.map((u) => u._id);
+        if (includePayments) {
+          const matchingUsers = await User.find({
+            $or: [
+              { name: { $regex: escaped, $options: 'i' } },
+              { email: { $regex: escaped, $options: 'i' } },
+            ],
+          }).select('_id');
+          const matchingUserIds = matchingUsers.map((u) => u._id);
 
-        // 2. Search matching transactions by razorpayPaymentId
-        const matchingTransactions = await PaymentTransaction.find({
-          razorpayPaymentId: { $regex: escaped, $options: 'i' },
-        }).select('orderId');
-        const matchingOrderIds = matchingTransactions.map((t) => t.orderId);
+          const matchingTransactions = await PaymentTransaction.find({
+            razorpayPaymentId: { $regex: escaped, $options: 'i' },
+          }).select('orderId');
+          const matchingOrderIds = matchingTransactions.map((t) => t.orderId);
 
-        // 3. Combine matching criteria
-        query.$or = [
-          { orderId: { $regex: escaped, $options: 'i' } },
-          { razorpayOrderId: { $regex: escaped, $options: 'i' } },
-          { userId: { $in: matchingUserIds } },
-          { orderId: { $in: matchingOrderIds } },
-        ];
+          paymentQuery.$or = [
+            { orderId: { $regex: escaped, $options: 'i' } },
+            { razorpayOrderId: { $regex: escaped, $options: 'i' } },
+            { itemId: { $regex: escaped, $options: 'i' } },
+            { userId: { $in: matchingUserIds } },
+            { orderId: { $in: matchingOrderIds } },
+          ];
+        }
+
+        if (includeStore) {
+          storeQuery.$or = [
+            { orderId: { $regex: escaped, $options: 'i' } },
+            { customerName: { $regex: escaped, $options: 'i' } },
+            { customerEmail: { $regex: escaped, $options: 'i' } },
+            { customerPhone: { $regex: escaped, $options: 'i' } },
+            { 'products.name': { $regex: escaped, $options: 'i' } },
+          ];
+        }
       }
 
-      const total = await PaymentOrder.countDocuments(query);
-      const rawOrders = await PaymentOrder.find(query)
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean();
+      // Count matching documents
+      const [totalPaymentCount, totalStoreCount] = await Promise.all([
+        includePayments ? PaymentOrder.countDocuments(paymentQuery) : 0,
+        includeStore ? StoreOrder.countDocuments(storeQuery) : 0,
+      ]);
+      const total = totalPaymentCount + totalStoreCount;
 
-      // Collect valid userIds from orders to fetch users safely
-      const validUserIds = rawOrders
+      // Fetch top candidates from both collections up to (page * limit)
+      const fetchCap = Math.min(2000, page * limit);
+      const [rawPaymentOrders, rawStoreOrders, cardDefinitions] = await Promise.all([
+        includePayments
+          ? PaymentOrder.find(paymentQuery).sort({ createdAt: -1 }).limit(fetchCap).lean()
+          : [],
+        includeStore
+          ? StoreOrder.find(storeQuery).sort({ createdAt: -1 }).limit(fetchCap).lean()
+          : [],
+        CardDefinition.find({}).select('key cardId title').lean(),
+      ]);
+
+      // Build card lookup map
+      const cardMap = new Map<string, string>();
+      for (const cd of cardDefinitions) {
+        if (cd.key) cardMap.set(cd.key.toLowerCase(), cd.title);
+        if (cd.cardId) cardMap.set(cd.cardId.toLowerCase(), cd.title);
+      }
+
+      // Populate user and audit info for payment orders
+      const validUserIds = rawPaymentOrders
         .map((o) => o.userId)
         .filter((uid): uid is mongoose.Types.ObjectId => Boolean(uid && mongoose.Types.ObjectId.isValid(uid)));
 
       const [users, auditLogs, transactions] = await Promise.all([
-        User.find({ _id: { $in: validUserIds } }).select('_id name email role').lean(),
-        AuditLog.find({
-          action: 'DELETE_USER',
-          targetId: { $in: validUserIds.map((id) => id.toString()) },
-        }).lean(),
-        PaymentTransaction.find({
-          orderId: { $in: rawOrders.map((o) => o.orderId) },
-        }).select('orderId razorpayPaymentId status verifiedAt').lean(),
+        validUserIds.length > 0
+          ? User.find({ _id: { $in: validUserIds } }).select('_id name email role').lean()
+          : [],
+        validUserIds.length > 0
+          ? AuditLog.find({
+              action: 'DELETE_USER',
+              targetId: { $in: validUserIds.map((id) => id.toString()) },
+            }).lean()
+          : [],
+        rawPaymentOrders.length > 0
+          ? PaymentTransaction.find({
+              orderId: { $in: rawPaymentOrders.map((o) => o.orderId) },
+            }).select('orderId razorpayPaymentId status verifiedAt rawResponse').lean()
+          : [],
       ]);
 
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
       const auditLogMap = new Map(auditLogs.map((a) => [a.targetId, a]));
       const transactionMap = new Map(transactions.map((t) => [t.orderId, t]));
 
-      // Aggregate revenue summaries (only verified PAID orders count toward revenue)
-      const [paidSummary] = await PaymentOrder.aggregate([
-        { $match: { status: 'PAID' } },
-        {
-          $group: {
-            _id: null,
-            totalRevenueRupees: { $sum: { $divide: ['$amountPaise', 100] } },
-            cardUnlocksRevenue: {
-              $sum: {
-                $cond: [{ $eq: ['$itemType', 'CARD_UNLOCK'] }, { $divide: ['$amountPaise', 100] }, 0],
-              },
-            },
-            deckPassesRevenue: {
-              $sum: {
-                $cond: [{ $eq: ['$itemType', 'DECK_PASS'] }, { $divide: ['$amountPaise', 100] }, 0],
-              },
-            },
-            paidCount: { $sum: 1 },
-          },
-        },
-      ]);
-
-      const failedCount = await PaymentOrder.countDocuments({ status: 'FAILED' });
-
-      const mappedOrders = rawOrders.map((o: any) => {
+      // Map Payment Orders
+      const mappedPayments = rawPaymentOrders.map((o: any) => {
         const rawUserId = o.userId ? o.userId.toString() : null;
         const matchedUser = rawUserId ? userMap.get(rawUserId) : null;
         const matchedAudit = rawUserId ? auditLogMap.get(rawUserId) : null;
@@ -1050,20 +1090,25 @@ export class AdminController {
           customerEmail = matchedUser.email;
           customerStatus = 'REGISTERED';
         } else if (matchedAudit) {
-          // Deletion is confirmed by administrative audit log
           customerName = matchedAudit.details?.name || 'Deleted Account';
           customerEmail = matchedAudit.details?.email || 'Confirmed Deleted by Administrator';
           customerStatus = 'DELETED_ACCOUNT';
         } else if (rawUserId) {
-          // A userId exists on the payment record, but user doc does not exist and no deletion record confirms it
           customerName = 'User details unavailable';
           customerEmail = 'Unverified User Reference';
           customerStatus = 'UNAVAILABLE';
         } else {
-          // Genuine guest payment
           customerName = 'Guest Seeker';
           customerEmail = o.guestSessionId ? `Session: ${o.guestSessionId}` : 'Unregistered Guest';
           customerStatus = 'GUEST';
+        }
+
+        let itemName = 'Service';
+        if (o.itemType === 'DECK_PASS') {
+          itemName = '55-Card Deck Pass';
+        } else if (o.itemType === 'CARD_UNLOCK') {
+          const cardTitle = cardMap.get((o.itemId || '').toLowerCase());
+          itemName = cardTitle ? `Card: ${cardTitle}` : (o.itemId ? `Card Unlock (${o.itemId})` : 'Card Unlock');
         }
 
         return {
@@ -1075,37 +1120,135 @@ export class AdminController {
           customer: {
             name: customerName,
             email: customerEmail,
+            phone: '—',
             userId: rawUserId,
             status: customerStatus,
           },
           userEmail: customerEmail,
           userName: customerName,
+          customerPhone: '—',
           itemType: o.itemType,
           itemId: o.itemId,
+          itemName,
           amountRupees: (o.amountPaise || 0) / 100,
           currency: o.currency || 'INR',
+          paymentMethod: matchedTxn?.rawResponse?.method || 'UPI',
           status: o.status,
           verifiedAt: matchedTxn?.verifiedAt || null,
           createdAt: o.createdAt,
         };
       });
 
+      // Map Store Orders (Physical Cosmic Store products)
+      const mappedStoreOrders = rawStoreOrders.map((s: any) => {
+        const prodNames = s.products && s.products.length > 0
+          ? s.products.map((p: any) => (p.quantity > 1 ? `${p.name} (x${p.quantity})` : p.name)).join(', ')
+          : 'Cosmic Store Product';
+
+        const orderStatus = s.paymentStatus === 'PAID'
+          ? 'PAID'
+          : s.paymentStatus === 'FAILED'
+          ? 'FAILED'
+          : 'CREATED';
+
+        return {
+          id: s._id.toString(),
+          orderId: s.orderId,
+          razorpayOrderId: s.orderId,
+          razorpayPaymentId: s.paymentMethod === 'Cash on Delivery'
+            ? 'COD'
+            : (s.orderId ? `PAY-${s.orderId.replace('#', '')}` : null),
+          guestSessionId: null,
+          customer: {
+            name: s.customerName || 'Store Customer',
+            email: s.customerEmail || '—',
+            phone: s.customerPhone || '—',
+            userId: s.userId ? s.userId.toString() : null,
+            status: s.userId ? 'REGISTERED' : 'GUEST',
+          },
+          userEmail: s.customerEmail || '—',
+          userName: s.customerName || 'Store Customer',
+          customerPhone: s.customerPhone || '—',
+          itemType: 'STORE_PRODUCT',
+          itemId: s.products?.map((p: any) => p.productId).filter(Boolean).join(',') || null,
+          itemName: prodNames,
+          amountRupees: s.totalAmountRupees || 0,
+          currency: 'INR',
+          paymentMethod: s.paymentMethod || 'Online',
+          status: orderStatus,
+          verifiedAt: s.paymentStatus === 'PAID' ? s.createdAt : null,
+          createdAt: s.createdAt,
+        };
+      });
+
+      // Merge & Sort descending by createdAt
+      const combined = [...mappedPayments, ...mappedStoreOrders];
+      combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Paginate
+      const startIndex = (page - 1) * limit;
+      const paginatedResults = combined.slice(startIndex, startIndex + limit);
+
+      // Revenue and Count Aggregations across both collections
+      const [paidPaymentSummary, paidStoreSummary, failedPaymentCount, failedStoreCount] = await Promise.all([
+        PaymentOrder.aggregate([
+          { $match: { status: 'PAID' } },
+          {
+            $group: {
+              _id: null,
+              cardUnlocksRevenue: {
+                $sum: {
+                  $cond: [{ $eq: ['$itemType', 'CARD_UNLOCK'] }, { $divide: ['$amountPaise', 100] }, 0],
+                },
+              },
+              deckPassesRevenue: {
+                $sum: {
+                  $cond: [{ $eq: ['$itemType', 'DECK_PASS'] }, { $divide: ['$amountPaise', 100] }, 0],
+                },
+              },
+              paidCount: { $sum: 1 },
+            },
+          },
+        ]),
+        StoreOrder.aggregate([
+          { $match: { paymentStatus: 'PAID' } },
+          {
+            $group: {
+              _id: null,
+              storeProductsRevenue: { $sum: '$totalAmountRupees' },
+              paidCount: { $sum: 1 },
+            },
+          },
+        ]),
+        PaymentOrder.countDocuments({ status: 'FAILED' }),
+        StoreOrder.countDocuments({ paymentStatus: 'FAILED' }),
+      ]);
+
+      const cardUnlocksRevenue = paidPaymentSummary[0]?.cardUnlocksRevenue || 0;
+      const deckPassesRevenue = paidPaymentSummary[0]?.deckPassesRevenue || 0;
+      const storeProductsRevenue = paidStoreSummary[0]?.storeProductsRevenue || 0;
+      const totalRevenueRupees = cardUnlocksRevenue + deckPassesRevenue + storeProductsRevenue;
+      const paidOrdersCount = (paidPaymentSummary[0]?.paidCount || 0) + (paidStoreSummary[0]?.paidCount || 0);
+      const failedOrdersCount = failedPaymentCount + failedStoreCount;
+
       res.json({
         success: true,
         data: {
           summary: {
-            totalRevenueRupees: paidSummary?.totalRevenueRupees || 0,
-            cardUnlocksRevenue: paidSummary?.cardUnlocksRevenue || 0,
-            deckPassesRevenue: paidSummary?.deckPassesRevenue || 0,
-            paidOrdersCount: paidSummary?.paidCount || 0,
-            failedOrdersCount: failedCount,
+            totalRevenueRupees,
+            cardUnlocksRevenue,
+            deckPassesRevenue,
+            storeProductsRevenue,
+            paidOrdersCount,
+            failedOrdersCount,
           },
-          orders: mappedOrders,
+          orders: paginatedResults,
+          payments: paginatedResults,
           pagination: {
             total,
             page,
             limit,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / limit) || 1,
           },
         },
       });
@@ -1115,7 +1258,7 @@ export class AdminController {
   }
 
   /**
-   * 5b. Delete Payment Order Record
+   * 5b. Delete Payment Order Record (Supports both digital payment orders & store orders)
    */
   public async deletePayment(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -1125,41 +1268,67 @@ export class AdminController {
         return;
       }
 
+      // Check PaymentOrder first
       const order = await PaymentOrder.findById(id);
-      if (!order) {
-        res.status(404).json({ success: false, message: 'Payment order record not found' });
+      if (order) {
+        const orderDetails = {
+          orderId: order.orderId,
+          razorpayOrderId: order.razorpayOrderId,
+          amountPaise: order.amountPaise,
+          itemType: order.itemType,
+          status: order.status,
+          userId: order.userId ? order.userId.toString() : null,
+          guestSessionId: order.guestSessionId || null,
+        };
+
+        // Cascade delete associated PaymentTransaction if exists
+        await Promise.all([
+          PaymentTransaction.deleteMany({ orderId: order.orderId }),
+          PaymentOrder.findByIdAndDelete(id),
+        ]);
+
+        await recordAuditAction(
+          req,
+          'DELETE_PAYMENT',
+          'PAYMENT',
+          id,
+          orderDetails
+        );
+
+        res.json({
+          success: true,
+          message: `Payment order '${order.orderId}' deleted successfully`,
+          data: { id, orderId: order.orderId },
+        });
         return;
       }
 
-      const orderDetails = {
-        orderId: order.orderId,
-        razorpayOrderId: order.razorpayOrderId,
-        amountPaise: order.amountPaise,
-        itemType: order.itemType,
-        status: order.status,
-        userId: order.userId ? order.userId.toString() : null,
-        guestSessionId: order.guestSessionId || null,
-      };
+      // Check StoreOrder
+      const storeOrder = await StoreOrder.findById(id);
+      if (storeOrder) {
+        await StoreOrder.findByIdAndDelete(id);
 
-      // Cascade delete associated PaymentTransaction if exists
-      await Promise.all([
-        PaymentTransaction.deleteMany({ orderId: order.orderId }),
-        PaymentOrder.findByIdAndDelete(id),
-      ]);
+        await recordAuditAction(
+          req,
+          'DELETE_STORE_PAYMENT',
+          'PAYMENT',
+          id,
+          {
+            orderId: storeOrder.orderId,
+            customerName: storeOrder.customerName,
+            totalAmountRupees: storeOrder.totalAmountRupees,
+          }
+        );
 
-      await recordAuditAction(
-        req,
-        'DELETE_PAYMENT',
-        'PAYMENT',
-        id,
-        orderDetails
-      );
+        res.json({
+          success: true,
+          message: `Store payment order '${storeOrder.orderId}' deleted successfully`,
+          data: { id, orderId: storeOrder.orderId },
+        });
+        return;
+      }
 
-      res.json({
-        success: true,
-        message: `Payment order '${order.orderId}' deleted successfully`,
-        data: { id, orderId: order.orderId },
-      });
+      res.status(404).json({ success: false, message: 'Payment or store order record not found' });
     } catch (err) {
       next(err);
     }
