@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import Razorpay from 'razorpay';
 import { Request, Response, NextFunction } from 'express';
 import { CosmicProduct } from '../models/CosmicProduct';
+import { StoreOrder } from '../models/StoreOrder';
 import { ENV } from '../config/env';
 
 interface CacheEntry {
@@ -259,6 +260,51 @@ export class StoreController {
         success: true,
         message: 'Payment verified successfully',
         paymentId: razorpayPaymentId,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Public: Place a Store Product Order (Cash on Delivery or Verified Online)
+   */
+  public async placeStoreOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { items, totalAmount, shippingAddress, paymentMethod, paymentId } = req.body;
+      const orderId = `#PC${Math.floor(70000 + Math.random() * 20000)}`;
+
+      const newOrder = await StoreOrder.create({
+        orderId,
+        customerName: shippingAddress?.fullName || 'Seeker',
+        customerEmail: shippingAddress?.email || '',
+        customerPhone: shippingAddress?.phone || '',
+        shippingAddress: {
+          fullName: shippingAddress?.fullName || '',
+          phone: shippingAddress?.phone || '',
+          email: shippingAddress?.email || '',
+          address: shippingAddress?.address || '',
+          city: shippingAddress?.city || '',
+          state: shippingAddress?.state || '',
+          pincode: shippingAddress?.pincode || '',
+        },
+        products: (items || []).map((it: any) => ({
+          productId: it.product?.id || it.productId,
+          name: it.product?.name || it.name || 'Store Product',
+          category: it.product?.category || it.category || 'Store Product',
+          priceRupees: it.product?.priceRupees || it.priceRupees || 0,
+          quantity: it.quantity || 1,
+          imageUrl: it.product?.imageUrl || it.imageUrl || '',
+        })),
+        totalAmountRupees: Number(totalAmount) || 0,
+        paymentMethod: paymentMethod || 'Online',
+        paymentStatus: paymentMethod?.includes('COD') ? 'PENDING' : 'PAID',
+        status: 'Confirmed',
+      });
+
+      res.status(201).json({
+        success: true,
+        data: newOrder,
       });
     } catch (err) {
       next(err);

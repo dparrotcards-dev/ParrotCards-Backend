@@ -17,6 +17,7 @@ import { WebhookEvent } from '../models/WebhookEvent';
 import { BirthProfile } from '../models/BirthProfile';
 import { AuditLog } from '../models/AuditLog';
 import { CosmicProduct } from '../models/CosmicProduct';
+import { StoreOrder } from '../models/StoreOrder';
 import { clearStoreCache } from './storeController';
 import { ENV } from '../config/env';
 
@@ -56,7 +57,7 @@ export class AdminController {
   public async getDashboardStats(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
       const [
         totalUsers,
@@ -87,9 +88,9 @@ export class AdminController {
           .limit(6)
           .populate('profileId', 'name dateOfBirth gender city place')
           .populate('userId', 'email name'),
-        PaymentOrder.find().sort({ createdAt: -1 }).limit(6).populate('userId', 'email name'),
+        StoreOrder.find().sort({ createdAt: -1 }).limit(6),
         PaymentOrder.aggregate([
-          { $match: { status: 'PAID', createdAt: { $gte: sevenDaysAgo } } },
+          { $match: { status: 'PAID', createdAt: { $gte: thirtyDaysAgo } } },
           {
             $group: {
               _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -100,7 +101,7 @@ export class AdminController {
           { $sort: { _id: 1 } },
         ]),
         User.aggregate([
-          { $match: { createdAt: { $gte: sevenDaysAgo } } },
+          { $match: { createdAt: { $gte: thirtyDaysAgo } } },
           {
             $group: {
               _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -161,21 +162,21 @@ export class AdminController {
             generatedAt: d.generatedAt || d.createdAt,
           })),
           recentOrders: recentOrders.map((o: any) => {
-            const rawUid = o.populated('userId') || o.userId?._id;
-            let userEmail = 'Guest Seeker';
-            if (o.userId?.email) {
-              userEmail = o.userId.email;
-            } else if (rawUid) {
-              userEmail = 'User details unavailable';
-            }
+            const primaryProduct = o.products?.[0];
+            const productName = primaryProduct?.name
+              ? (o.products.length > 1 ? `${primaryProduct.name} +${o.products.length - 1}` : primaryProduct.name)
+              : 'Sacred Store Product';
+
             return {
               id: o._id.toString(),
-              orderId: o.orderId,
-              userEmail,
-              amountRupees: (o.amountPaise || 0) / 100,
-              itemType: o.itemType,
-              currency: o.currency,
-              status: o.status,
+              orderId: o.orderId ? o.orderId.replace(/^#/, '') : `PC${o._id.toString().slice(-5)}`,
+              customerName: o.customerName || 'Seeker',
+              userEmail: o.customerEmail || o.customerName || 'Customer',
+              productName,
+              amountRupees: o.totalAmountRupees || 0,
+              itemType: 'STORE_PRODUCT',
+              currency: 'INR',
+              status: o.status || 'Confirmed',
               createdAt: o.createdAt,
             };
           }),
@@ -227,9 +228,10 @@ export class AdminController {
         .select('-passwordHash');
 
       const userIds = users.map((u) => u._id);
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-      // Aggregate deck counts, active passes, and unlocked card counts per user
-      const [deckCounts, activePasses, unlockCounts] = await Promise.all([
+      // Aggregate account activity for each page row plus the customer summary cards.
+      const [deckCounts, activePasses, unlockCounts, orderStats, totalCustomers, newCustomersLast7Days, customersWithOrders, customerSpending] = await Promise.all([
         PersonalizedDeck.aggregate([
           { $match: { userId: { $in: userIds } } },
           { $group: { _id: '$userId', count: { $sum: 1 } } },
@@ -243,11 +245,25 @@ export class AdminController {
           { $match: { userId: { $in: userIds } } },
           { $group: { _id: '$userId', count: { $sum: 1 } } },
         ]),
+        PaymentOrder.aggregate([
+          { $match: { userId: { $in: userIds }, status: 'PAID' } },
+          { $group: { _id: '$userId', orderCount: { $sum: 1 }, totalSpentPaise: { $sum: '$amountPaise' } } },
+        ]),
+        User.countDocuments({ role: 'user' }),
+        User.countDocuments({ role: 'user', createdAt: { $gte: sevenDaysAgo } }),
+        PaymentOrder.distinct('userId', { status: 'PAID' }),
+        PaymentOrder.aggregate([
+          { $match: { status: 'PAID' } },
+          { $group: { _id: null, totalSpentPaise: { $sum: '$amountPaise' } } },
+        ]),
       ]);
 
       const deckCountMap = new Map(deckCounts.map((d) => [d._id.toString(), d.count]));
       const activePassSet = new Set(activePasses.map((p) => p.userId.toString()));
       const unlockCountMap = new Map(unlockCounts.map((u) => [u._id.toString(), u.count]));
+      const orderStatsMap = new Map(
+        orderStats.map((order) => [order._id.toString(), { orderCount: order.orderCount, totalSpentPaise: order.totalSpentPaise }])
+      );
 
       const enrichedUsers = users.map((u) => ({
         id: u._id.toString(),
@@ -257,6 +273,8 @@ export class AdminController {
         deckCount: deckCountMap.get(u._id.toString()) || 0,
         hasActivePass: activePassSet.has(u._id.toString()),
         unlockedCardsCount: unlockCountMap.get(u._id.toString()) || 0,
+        totalOrders: orderStatsMap.get(u._id.toString())?.orderCount || 0,
+        totalSpentRupees: (orderStatsMap.get(u._id.toString())?.totalSpentPaise || 0) / 100,
         createdAt: u.createdAt,
       }));
 
@@ -264,6 +282,12 @@ export class AdminController {
         success: true,
         data: {
           users: enrichedUsers,
+          metrics: {
+            totalCustomers,
+            newCustomersLast7Days,
+            customersWithOrders: customersWithOrders.length,
+            totalCustomerSpendingRupees: (customerSpending[0]?.totalSpentPaise || 0) / 100,
+          },
           pagination: {
             total,
             page,
@@ -1914,6 +1938,86 @@ export class AdminController {
           createdAt: product.createdAt,
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * 13. Store Orders Management (List and Status Update)
+   */
+  public async getStoreOrders(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
+      const statusFilter = (req.query.status as string || '').trim();
+      const search = (req.query.search as string || '').trim();
+
+      const query: Record<string, any> = {};
+      if (statusFilter && statusFilter.toLowerCase() !== 'all') {
+        query.status = { $regex: new RegExp(`^${statusFilter}$`, 'i') };
+      }
+
+      if (search) {
+        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        query.$or = [
+          { orderId: { $regex: escaped, $options: 'i' } },
+          { customerName: { $regex: escaped, $options: 'i' } },
+          { customerEmail: { $regex: escaped, $options: 'i' } },
+          { customerPhone: { $regex: escaped, $options: 'i' } },
+          { 'products.name': { $regex: escaped, $options: 'i' } },
+        ];
+      }
+
+      const total = await StoreOrder.countDocuments(query);
+      const orders = await StoreOrder.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+
+      res.json({
+        success: true,
+        data: {
+          orders: orders.map((o) => ({
+            id: o._id.toString(),
+            orderId: o.orderId,
+            customerName: o.customerName,
+            customerEmail: o.customerEmail,
+            customerPhone: o.customerPhone,
+            shippingAddress: o.shippingAddress,
+            products: o.products,
+            totalAmountRupees: o.totalAmountRupees,
+            paymentMethod: o.paymentMethod,
+            paymentStatus: o.paymentStatus,
+            status: o.status,
+            courierName: o.courierName,
+            trackingNumber: o.trackingNumber,
+            createdAt: o.createdAt,
+          })),
+          pagination: {
+            total,
+            page,
+            limit,
+            pages: Math.ceil(total / limit),
+          },
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async updateStoreOrderStatus(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const updated = await StoreOrder.findByIdAndUpdate(id, { status }, { new: true });
+      if (!updated) {
+        res.status(404).json({ success: false, message: 'Store order not found' });
+        return;
+      }
+      res.json({ success: true, data: updated });
     } catch (err) {
       next(err);
     }

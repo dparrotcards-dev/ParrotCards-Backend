@@ -54,4 +54,8 @@ router.delete('/products/:id', requireAdmin, (req, res, next) => controller.dele
 router.patch('/products/:id/status', requireAdmin, (req, res, next) => controller.toggleProductStatus(req, res, next));
 router.patch('/products/:id/stock', requireAdmin, (req, res, next) => controller.toggleProductStock(req, res, next));
 
+// 13. Store Orders Management
+router.get('/store-orders', requireAdmin, (req, res, next) => controller.getStoreOrders(req, res, next));
+router.patch('/store-orders/:id/status', requireAdmin, (req, res, next) => controller.updateStoreOrderStatus(req, res, next));
+
 export default router;
