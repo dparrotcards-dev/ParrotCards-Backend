@@ -40,7 +40,8 @@ export class RazorpayService {
   public async createOrder(
     receiptId: string,
     itemType: PaymentItemType,
-    notes: Record<string, string> = {}
+    notes: Record<string, string> = {},
+    customAmountPaise?: number
   ): Promise<{ id: string; amount: number; currency: string }> {
     const isTestEnv = process.env.NODE_ENV === 'test' || ENV.NODE_ENV === 'test';
     const hasPlaceholderCredentials =
@@ -54,7 +55,7 @@ export class RazorpayService {
       );
     }
 
-    const amount = this.getPriceForType(itemType);
+    const amount = customAmountPaise !== undefined ? customAmountPaise : this.getPriceForType(itemType);
 
     try {
       const order = await this.razorpay.orders.create({

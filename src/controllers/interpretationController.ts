@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import { PersonalizedCard } from '../models/PersonalizedCard';
 import { PersonalizedDeck } from '../models/PersonalizedDeck';
+import { CardDefinition } from '../models/CardDefinition';
 import { GeminiService } from '../integrations/gemini/GeminiService';
 import { EntitlementService, FREE_CARD_KEYS } from '../services/entitlementService';
 
@@ -19,11 +20,14 @@ export class InterpretationController {
       const isUnlocked = isFree || entitlementService.isCardUnlocked(key, entitlements);
 
       if (!isUnlocked) {
+        const cardDef = await CardDefinition.findOne({ key });
+        const unlockPriceRupees = cardDef?.price !== undefined ? cardDef.price : 2;
+
         res.status(402).json({
           success: false,
           message: 'Payment required to read deep AI interpretation for this card.',
           isUnlocked: false,
-          unlockPriceRupees: 2,
+          unlockPriceRupees,
         });
         return;
       }

@@ -80,10 +80,14 @@ export class DeckController {
       // Entitlements must be evaluated against the current requester (req.user?.id)
       const entitlements = await entitlementService.getUserEntitlements(req.user?.id);
       const cards = await PersonalizedCard.find({ deckId: deck._id }).sort({ position: 1 });
+      const cardDefs = await CardDefinition.find().lean();
+      const cardDefMap = new Map(cardDefs.map((cd) => [cd.key, cd]));
 
       const enrichedCards = cards.map((c) => {
         const isCardFree = (entitlements.freeCardKeys || FREE_CARD_KEYS).includes(c.key);
         const isUnlocked = isCardFree || entitlementService.isCardUnlocked(c.key, entitlements);
+        const cardDef = cardDefMap.get(c.key);
+        const price = isCardFree ? 0 : (cardDef?.price !== undefined ? cardDef.price : 2);
 
         const rawPlacement = (c.astronomicalPlacement || {}) as IAstronomicalPlacement;
         const placement: IAstronomicalPlacement = { ...rawPlacement };
@@ -134,6 +138,7 @@ export class DeckController {
           isSovereign: c.isSovereign,
           isFree: isCardFree,
           isUnlocked,
+          price,
         };
       });
 
@@ -187,6 +192,7 @@ export class DeckController {
             position: cardDef.position,
             isFree,
             isUnlocked,
+            price: isFree ? 0 : (cardDef.price !== undefined ? cardDef.price : 2),
           },
           entitlements,
         },

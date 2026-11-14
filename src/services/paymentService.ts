@@ -4,6 +4,7 @@ import { ENV } from '../config/env';
 import { PaymentOrder, IPaymentOrder, PaymentItemType } from '../models/PaymentOrder';
 import { PaymentTransaction } from '../models/PaymentTransaction';
 import { CardUnlock } from '../models/CardUnlock';
+import { CardDefinition } from '../models/CardDefinition';
 import { DeckPass } from '../models/DeckPass';
 import { WebhookEvent } from '../models/WebhookEvent';
 import { RazorpayService, PAYMENT_PRICES } from '../integrations/payments/RazorpayService';
@@ -50,14 +51,28 @@ export class PaymentService {
       throw err;
     }
 
-    const amountPaise = this.razorpayService.getPriceForType(itemType);
+    let amountPaise = this.razorpayService.getPriceForType(itemType);
+
+    // Dynamic price lookup for card unlocks configured in admin panel
+    if (itemType === 'CARD_UNLOCK' && cardKey) {
+      const cardDef = await CardDefinition.findOne({ key: cardKey });
+      if (cardDef && cardDef.price !== undefined && cardDef.price > 0) {
+        amountPaise = Math.round(cardDef.price * 100);
+      }
+    }
+
     const internalReceipt = `rcpt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    // Call Razorpay API to create official order
-    const rzpOrder = await this.razorpayService.createOrder(internalReceipt, itemType, {
-      userId,
-      ...(cardKey && { cardKey }),
-    });
+    // Call Razorpay API to create official order with dynamic amount
+    const rzpOrder = await this.razorpayService.createOrder(
+      internalReceipt,
+      itemType,
+      {
+        userId,
+        ...(cardKey && { cardKey }),
+      },
+      amountPaise
+    );
 
     const paymentOrder = await PaymentOrder.create({
       userId: uid,
