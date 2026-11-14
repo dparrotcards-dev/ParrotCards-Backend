@@ -605,6 +605,7 @@ export class AdminController {
             shortSummary: card.shortSummary,
             isFreeByDefault: card.isFreeByDefault,
             category: card.category,
+            price: card.isFreeByDefault ? 0 : (card.price ?? 2),
           });
         }
 
@@ -665,6 +666,7 @@ export class AdminController {
             reflectionQuestion: c.reflectionQuestion,
             isFreeByDefault: c.isFreeByDefault,
             shortSummary: c.shortSummary,
+            price: c.isFreeByDefault ? 0 : (c.price ?? 2),
           })),
         },
       });
@@ -691,6 +693,7 @@ export class AdminController {
         isFreeByDefault,
         category,
         position,
+        price,
       } = req.body;
 
       const card = await CardDefinition.findById(id);
@@ -716,6 +719,7 @@ export class AdminController {
       }
       if (category !== undefined) card.category = String(category).trim();
       if (position !== undefined && typeof position === 'number') card.position = position;
+      if (price !== undefined) card.price = Math.max(0, Number(price) || 0);
 
       await card.save();
 

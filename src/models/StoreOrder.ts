@@ -84,3 +84,4 @@ const StoreOrderSchema = new Schema<IStoreOrder>(
 StoreOrderSchema.index({ createdAt: -1 });
 
 export const StoreOrder = mongoose.model<IStoreOrder>('StoreOrder', StoreOrderSchema);
+

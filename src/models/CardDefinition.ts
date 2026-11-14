@@ -17,6 +17,7 @@ export interface ICardDefinition extends Document {
   reflectionQuestion: string;
   position: number; // 1 to 55
   isFreeByDefault: boolean;
+  price?: number;
   category: string;
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +40,7 @@ const CardDefinitionSchema = new Schema<ICardDefinition>(
     reflectionQuestion: { type: String, required: true },
     position: { type: Number, required: true, unique: true, index: true },
     isFreeByDefault: { type: Boolean, default: false, index: true },
+    price: { type: Number, default: 2 },
     category: { type: String, default: 'Major' },
   },
   { timestamps: true }
