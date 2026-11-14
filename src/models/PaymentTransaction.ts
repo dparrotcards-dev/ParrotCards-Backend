@@ -10,6 +10,7 @@ export interface IPaymentTransaction extends Document {
   amountPaise: number;
   currency: string;
   status: 'SUCCESS' | 'FAILED' | 'TAMPERED';
+  paymentMethod?: string;
   rawResponse?: Record<string, any>;
   verifiedAt: Date;
   createdAt: Date;
@@ -27,6 +28,7 @@ const PaymentTransactionSchema = new Schema<IPaymentTransaction>(
     amountPaise: { type: Number, required: true },
     currency: { type: String, default: 'INR' },
     status: { type: String, enum: ['SUCCESS', 'FAILED', 'TAMPERED'], required: true },
+    paymentMethod: { type: String },
     rawResponse: { type: Schema.Types.Mixed },
     verifiedAt: { type: Date, default: Date.now },
   },

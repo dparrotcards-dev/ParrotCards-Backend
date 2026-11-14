@@ -139,6 +139,26 @@ export class PaymentService {
     }
 
     // 3. Signature is valid! Record transaction idempotently
+    let capturedMethod = 'UPI';
+    let rawResponse: Record<string, any> | undefined;
+
+    try {
+      const pInfo = await (this.razorpayService as any).razorpay?.payments?.fetch(razorpayPaymentId);
+      if (pInfo) {
+        rawResponse = pInfo;
+        if (pInfo.method) {
+          const m = String(pInfo.method).toLowerCase();
+          if (m.includes('card')) capturedMethod = 'Credit Card';
+          else if (m.includes('bank') || m.includes('netbanking')) capturedMethod = 'Net Banking';
+          else if (m.includes('wallet')) capturedMethod = 'Wallet';
+          else if (m.includes('upi')) capturedMethod = 'UPI';
+          else capturedMethod = pInfo.method;
+        }
+      }
+    } catch {
+      // Continue safely if external fetch fails
+    }
+
     await PaymentTransaction.findOneAndUpdate(
       { razorpayPaymentId },
       {
@@ -151,6 +171,8 @@ export class PaymentService {
           amountPaise: order.amountPaise,
           currency: order.currency,
           status: 'SUCCESS',
+          paymentMethod: capturedMethod,
+          rawResponse,
           verifiedAt: new Date(),
         },
       },
@@ -158,6 +180,7 @@ export class PaymentService {
     );
 
     order.status = 'PAID';
+    (order as any).paymentMethod = capturedMethod;
     await order.save();
 
     let passExpiresAt: Date | undefined;

@@ -1082,7 +1082,7 @@ export class AdminController {
         rawPaymentOrders.length > 0
           ? PaymentTransaction.find({
               orderId: { $in: rawPaymentOrders.map((o) => o.orderId) },
-            }).select('orderId razorpayPaymentId status verifiedAt rawResponse').lean()
+            }).select('orderId razorpayPaymentId status verifiedAt rawResponse paymentMethod').lean()
           : [],
       ]);
 
@@ -1127,6 +1127,24 @@ export class AdminController {
           itemName = cardTitle ? `Card: ${cardTitle}` : (o.itemId ? `Card Unlock (${o.itemId})` : 'Card Unlock');
         }
 
+        let resolvedPaymentMethod = '—';
+        if (matchedTxn?.paymentMethod) {
+          resolvedPaymentMethod = matchedTxn.paymentMethod;
+        } else if (matchedTxn?.rawResponse?.method) {
+          const m = String(matchedTxn.rawResponse.method).toLowerCase();
+          if (m.includes('card')) resolvedPaymentMethod = 'Credit Card';
+          else if (m.includes('bank') || m.includes('netbanking')) resolvedPaymentMethod = 'Net Banking';
+          else if (m.includes('wallet')) resolvedPaymentMethod = 'Wallet';
+          else if (m.includes('upi')) resolvedPaymentMethod = 'UPI';
+          else resolvedPaymentMethod = matchedTxn.rawResponse.method;
+        } else if (o.paymentMethod) {
+          resolvedPaymentMethod = o.paymentMethod;
+        } else if (o.status === 'PAID') {
+          resolvedPaymentMethod = 'UPI';
+        } else {
+          resolvedPaymentMethod = '—';
+        }
+
         return {
           id: o._id.toString(),
           orderId: o.orderId,
@@ -1148,7 +1166,7 @@ export class AdminController {
           itemName,
           amountRupees: (o.amountPaise || 0) / 100,
           currency: o.currency || 'INR',
-          paymentMethod: matchedTxn?.rawResponse?.method || 'UPI',
+          paymentMethod: resolvedPaymentMethod,
           status: o.status === 'PAID' ? 'PAID' : (o.status === 'REFUNDED' ? 'REFUNDED' : 'FAILED'),
           verifiedAt: matchedTxn?.verifiedAt || null,
           createdAt: o.createdAt,

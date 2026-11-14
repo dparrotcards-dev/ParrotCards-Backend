@@ -13,6 +13,7 @@ export interface IPaymentOrder extends Document {
   amountPaise: number;
   currency: string;
   status: PaymentOrderStatus;
+  paymentMethod?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +29,7 @@ const PaymentOrderSchema = new Schema<IPaymentOrder>(
     amountPaise: { type: Number, required: true },
     currency: { type: String, default: 'INR' },
     status: { type: String, enum: ['CREATED', 'PAID', 'FAILED', 'EXPIRED'], default: 'CREATED', index: true },
+    paymentMethod: { type: String },
   },
   { timestamps: true }
 );
