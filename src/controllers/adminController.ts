@@ -59,12 +59,17 @@ export class AdminController {
       const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      // Identify real users (exclude mock / automated test accounts)
+      const realUsers = await User.find({ email: { $not: /@example\.com$/i } }).select('_id').lean();
+      const realUserIds = realUsers.map((u) => u._id);
+
       const [
         totalUsers,
         totalDecks,
         totalCalculations,
         totalStoreOrders,
         capturedStoreOrders,
+        paidPaymentOrders,
         storeOrderStatuses,
         activePassesCount,
         aiInterpretationsCount,
@@ -73,13 +78,20 @@ export class AdminController {
         recentDecks,
         recentOrders,
         dailyOrdersRaw,
+        dailyPaymentsRaw,
         dailyUsersRaw,
       ] = await Promise.all([
         User.countDocuments(),
         PersonalizedDeck.countDocuments(),
         AstronomicalCalculation.countDocuments(),
         StoreOrder.countDocuments(),
-        StoreOrder.find({ paymentStatus: 'PAID' }),
+        StoreOrder.find({ paymentStatus: 'PAID', customerEmail: { $not: /@example\.com$/i } }),
+        PaymentOrder.find({
+          status: 'PAID',
+          userId: { $in: realUserIds },
+          razorpayOrderId: { $not: /^order_sim_/i },
+          orderId: { $not: /^rcpt_wh_/i },
+        }).lean(),
         StoreOrder.aggregate([
           { $group: { _id: '$status', count: { $sum: 1 } } },
         ]),
@@ -92,13 +104,38 @@ export class AdminController {
           .limit(6)
           .populate('profileId', 'name dateOfBirth gender city place')
           .populate('userId', 'email name'),
-        StoreOrder.find().sort({ createdAt: -1 }).limit(6),
+        StoreOrder.find({ customerEmail: { $not: /@example\.com$/i } }).sort({ createdAt: -1 }).limit(6),
         StoreOrder.aggregate([
-          { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+          {
+            $match: {
+              paymentStatus: 'PAID',
+              customerEmail: { $not: /@example\.com$/i },
+              createdAt: { $gte: thirtyDaysAgo },
+            },
+          },
           {
             $group: {
               _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
               revenueRupees: { $sum: '$totalAmountRupees' },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+        PaymentOrder.aggregate([
+          {
+            $match: {
+              status: 'PAID',
+              userId: { $in: realUserIds },
+              razorpayOrderId: { $not: /^order_sim_/i },
+              orderId: { $not: /^rcpt_wh_/i },
+              createdAt: { $gte: thirtyDaysAgo },
+            },
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              revenueRupees: { $sum: { $divide: ['$amountPaise', 100] } },
               count: { $sum: 1 },
             },
           },
@@ -123,11 +160,49 @@ export class AdminController {
         }
       }
 
-      const totalRevenueRupees = capturedStoreOrders.reduce((acc, curr) => acc + (curr.totalAmountRupees || 0), 0);
+      // Three-stream revenue calculation: Card Unlocks + Deck Passes + Cosmic Store Physical Products
+      let cardUnlocksRevenue = 0;
+      let deckPassesRevenue = 0;
+      for (const po of paidPaymentOrders) {
+        const amt = (po.amountPaise || 0) / 100;
+        if (po.itemType === 'CARD_UNLOCK') {
+          cardUnlocksRevenue += amt;
+        } else if (po.itemType === 'DECK_PASS') {
+          deckPassesRevenue += amt;
+        }
+      }
+
+      const storeProductsRevenue = capturedStoreOrders.reduce((acc, curr) => acc + (curr.totalAmountRupees || 0), 0);
+      const totalRevenueRupees = cardUnlocksRevenue + deckPassesRevenue + storeProductsRevenue;
+
       const paymentSuccessRate = totalStoreOrders > 0 ? Math.round((capturedStoreOrders.length / totalStoreOrders) * 100) : 100;
       const totalInterpretations = aiInterpretationsCount + fallbackInterpretationsCount;
       const aiGenerationRate =
         totalInterpretations > 0 ? Math.round((aiInterpretationsCount / totalInterpretations) * 100) : 100;
+
+      // Merge 30-day revenue trends from both StoreOrders and PaymentOrders
+      const revenueTrendMap = new Map<string, { date: string; revenueRupees: number; ordersCount: number }>();
+      for (const d of dailyOrdersRaw) {
+        revenueTrendMap.set(d._id, {
+          date: d._id,
+          revenueRupees: d.revenueRupees || 0,
+          ordersCount: d.count || 0,
+        });
+      }
+      for (const p of dailyPaymentsRaw) {
+        const existing = revenueTrendMap.get(p._id);
+        if (existing) {
+          existing.revenueRupees += p.revenueRupees || 0;
+          existing.ordersCount += p.count || 0;
+        } else {
+          revenueTrendMap.set(p._id, {
+            date: p._id,
+            revenueRupees: p.revenueRupees || 0,
+            ordersCount: p.count || 0,
+          });
+        }
+      }
+      const revenueTrend = Array.from(revenueTrendMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
       const dbHost = mongoose.connection.host || 'localhost';
       const isAtlas = dbHost.includes('mongodb.net');
@@ -150,16 +225,15 @@ export class AdminController {
             },
             paymentSuccessRate,
             totalRevenueRupees,
+            cardUnlocksRevenue,
+            deckPassesRevenue,
+            storeProductsRevenue,
             activePassesCount,
             aiInterpretationsCount,
             fallbackInterpretationsCount,
             aiGenerationRate,
           },
-          revenueTrend: dailyOrdersRaw.map((d) => ({
-            date: d._id,
-            revenueRupees: d.revenueRupees,
-            ordersCount: d.count,
-          })),
+          revenueTrend,
           userGrowthTrend: dailyUsersRaw.map((u) => ({
             date: u._id,
             count: u.count,
