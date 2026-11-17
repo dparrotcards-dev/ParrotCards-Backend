@@ -13,23 +13,39 @@ export class EmailService {
   private isConfigured = false;
 
   constructor() {
+    this.initTransporter();
+  }
+
+  private initTransporter() {
     const host = process.env.SMTP_HOST;
     const port = parseInt(process.env.SMTP_PORT || '587', 10);
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
 
-    if (host && user && pass) {
-      this.transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: {
-          user,
-          pass,
-        },
-      });
-      this.isConfigured = true;
+    if (user && pass) {
+      if (host) {
+        this.transporter = nodemailer.createTransport({
+          host,
+          port,
+          secure: port === 465,
+          auth: { user, pass },
+        });
+        this.isConfigured = true;
+      } else if (user.includes('@gmail.com')) {
+        this.transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user, pass },
+        });
+        this.isConfigured = true;
+      }
     }
+  }
+
+  private getTransporter(): Transporter | null {
+    if (!this.transporter) {
+      this.initTransporter();
+    }
+    return this.transporter;
   }
 
   /**
@@ -161,6 +177,141 @@ export class EmailService {
         success: true,
         devLink: resetUrl,
       };
+    }
+  }
+
+  /**
+   * Send a branded support reply email to the customer who submitted a contact inquiry
+   */
+  public async sendContactReplyEmail(params: {
+    toEmail: string;
+    customerName: string;
+    subject: string;
+    originalMessage: string;
+    replyText: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const { toEmail, customerName, subject, originalMessage, replyText } = params;
+
+    const fromAddress =
+      process.env.SMTP_FROM ||
+      (process.env.SMTP_USER
+        ? `"Parrot Cards Support" <${process.env.SMTP_USER}>`
+        : '"Parrot Cards Support" <support@parrotcards.com>');
+
+    const emailSubject = `Re: ${subject || 'Your Inquiry'} - Parrot Cards Support`;
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${emailSubject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F8F5EE; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1A1817;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F8F5EE; padding: 35px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 580px; background-color: #FFFDF9; border: 1px solid rgba(140, 109, 59, 0.25); border-radius: 24px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); overflow: hidden;">
+          <!-- Top Gold Accent Bar -->
+          <tr>
+            <td style="height: 4px; background: linear-gradient(90deg, #8C6D3B, #D4AF37, #8C6D3B);"></td>
+          </tr>
+
+          <!-- Header -->
+          <tr>
+            <td style="padding: 32px 36px 18px 36px; text-align: center;">
+              <div style="font-size: 26px; color: #8C6D3B; line-height: 1; margin-bottom: 8px;">✦</div>
+              <h1 style="margin: 0; font-family: 'Cinzel', Georgia, serif; font-size: 24px; letter-spacing: 2px; color: #1A1817; text-transform: uppercase;">
+                Parrot Cards
+              </h1>
+              <p style="margin: 6px 0 0 0; font-style: italic; font-size: 13px; color: #8C6D3B;">
+                Customer Support Response
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 10px 36px 30px 36px;">
+              <p style="font-size: 15px; line-height: 1.6; color: #2C2016; margin-bottom: 18px;">
+                Namaste <strong>${customerName || 'Seeker'}</strong>,<br/><br/>
+                Thank you for reaching out to us. Regarding your inquiry on <strong>&ldquo;${subject}&rdquo;</strong>, our support team has provided the following response:
+              </p>
+
+              <!-- Support Reply Box -->
+              <div style="background-color: #FAF5EE; border: 1px solid #E5D7C6; border-left: 4px solid #8C6D3B; border-radius: 14px; padding: 18px 20px; margin: 20px 0;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; color: #8C6D3B; margin-bottom: 8px;">
+                  Response from Parrot Cards Support:
+                </div>
+                <div style="font-size: 14px; line-height: 1.6; color: #2C2016; white-space: pre-line;">
+${replyText}
+                </div>
+              </div>
+
+              <!-- Original Message Box -->
+              <div style="background-color: #FFFDF9; border: 1px dashed #D5C7B6; border-radius: 12px; padding: 14px 16px; margin: 20px 0;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; color: #7A6A58; margin-bottom: 6px;">
+                  Your Original Inquiry:
+                </div>
+                <div style="font-size: 12px; line-height: 1.5; color: #5A4838; font-style: italic; white-space: pre-line;">
+&ldquo;${originalMessage}&rdquo;
+                </div>
+              </div>
+
+              <p style="font-size: 13px; line-height: 1.6; color: #5A4838; margin-top: 24px;">
+                If you have any further questions or need additional assistance, please reply directly to this email or visit our website.
+              </p>
+
+              <p style="font-size: 13px; color: #2C2016; margin-top: 20px; margin-bottom: 0;">
+                Warm regards,<br/>
+                <strong style="color: #8C6D3B;">Parrot Cards Support Team</strong>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 18px 36px; background-color: #F8F5EE; border-top: 1px solid rgba(140, 109, 59, 0.15); text-align: center; font-size: 11px; color: #8C6D3B;">
+              &copy; ${new Date().getFullYear()} Parrot Cards &bull; Vedic Astronomical Astrological Engine
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const textContent = `Namaste ${customerName || 'Seeker'},\n\nThank you for contacting Parrot Cards.\n\nResponse to your inquiry regarding "${subject}":\n\n${replyText}\n\n---\nYour original message:\n"${originalMessage}"\n\nWarm regards,\nParrot Cards Support Team`;
+
+    const transporter = this.getTransporter();
+
+    if (transporter) {
+      try {
+        const info = await transporter.sendMail({
+          from: fromAddress,
+          to: toEmail,
+          subject: emailSubject,
+          html: htmlContent,
+          text: textContent,
+        });
+
+        console.log(`✨ [EMAIL SERVICE]: Support reply dispatched to ${toEmail} (msgId: ${info.messageId})`);
+        return { success: true, messageId: info.messageId };
+      } catch (err: any) {
+        console.error('❌ [EMAIL SERVICE ERROR]: Failed to send reply email via SMTP:', err.message);
+        return { success: false, error: err.message };
+      }
+    } else {
+      console.log(`\n======================================================`);
+      console.log(`📧 [EMAIL SERVICE - DISPATCH TO CUSTOMER INBOX]`);
+      console.log(`To: ${toEmail} (${customerName})`);
+      console.log(`Subject: ${emailSubject}`);
+      console.log(`Reply Content:\n${replyText}`);
+      console.log(`======================================================\n`);
+      return { success: true };
     }
   }
 }

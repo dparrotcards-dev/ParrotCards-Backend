@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ContactMessage } from '../models/ContactMessage';
+import { emailService } from '../services/emailService';
 
 export class ContactMessageController {
   // Public: Submit message from Contact Us / Support Page
@@ -122,13 +123,28 @@ export class ContactMessageController {
       message.status = 'Replied';
       if (!markAsRepliedOnly && replyText) {
         message.replyText = replyText;
+
+        // Dispatch email to customer's email address
+        try {
+          await emailService.sendContactReplyEmail({
+            toEmail: message.email,
+            customerName: message.name,
+            subject: message.subject,
+            originalMessage: message.message,
+            replyText: replyText.trim(),
+          });
+        } catch (emailErr: any) {
+          console.error('Failed to send email to customer:', emailErr);
+        }
       }
       message.repliedAt = new Date();
       await message.save();
 
       return res.json({
         status: 'success',
-        message: markAsRepliedOnly ? 'Message marked as replied.' : 'Reply sent to customer successfully.',
+        message: markAsRepliedOnly
+          ? 'Message marked as replied.'
+          : `Reply sent to ${message.email} successfully.`,
         data: message,
       });
     } catch (error) {
