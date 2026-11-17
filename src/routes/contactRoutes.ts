@@ -8,3 +8,4 @@ const controller = new ContactMessageController();
 router.post('/', (req, res, next) => controller.createMessage(req, res, next));
 
 export default router;
+

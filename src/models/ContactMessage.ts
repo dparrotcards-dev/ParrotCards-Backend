@@ -41,3 +41,4 @@ export const ContactMessage = mongoose.model<IContactMessage>(
   'ContactMessage',
   ContactMessageSchema
 );
+
