@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { AdminController } from '../controllers/adminController';
+import { ContactMessageController } from '../controllers/contactMessageController';
 import { requireAdmin, requireSuperAdmin } from '../middleware/authMiddleware';
 
 const router = Router();
 const controller = new AdminController();
+const messageController = new ContactMessageController();
 
 // 1. Overview Dashboard Metrics
 router.get('/stats', requireAdmin, (req, res, next) => controller.getDashboardStats(req, res, next));
@@ -57,5 +59,11 @@ router.patch('/products/:id/stock', requireAdmin, (req, res, next) => controller
 // 13. Store Orders Management
 router.get('/store-orders', requireAdmin, (req, res, next) => controller.getStoreOrders(req, res, next));
 router.patch('/store-orders/:id/status', requireAdmin, (req, res, next) => controller.updateStoreOrderStatus(req, res, next));
+
+// 14. Contact Messages Management
+router.get('/messages', requireAdmin, (req, res, next) => messageController.getMessages(req, res, next));
+router.patch('/messages/:id/reply', requireAdmin, (req, res, next) => messageController.replyToMessage(req, res, next));
+router.patch('/messages/:id/status', requireAdmin, (req, res, next) => messageController.updateStatus(req, res, next));
+router.delete('/messages/:id', requireAdmin, (req, res, next) => messageController.deleteMessage(req, res, next));
 
 export default router;
