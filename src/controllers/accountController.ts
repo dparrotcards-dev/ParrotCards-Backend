@@ -4,6 +4,7 @@ import { User } from '../models/User';
 import { BirthProfile } from '../models/BirthProfile';
 import { PersonalizedDeck } from '../models/PersonalizedDeck';
 import { PersonalizedCard } from '../models/PersonalizedCard';
+import { StoreOrder } from '../models/StoreOrder';
 import { EntitlementService } from '../services/entitlementService';
 
 const entitlementService = new EntitlementService();
@@ -40,6 +41,16 @@ export class AccountController {
       const profiles = await BirthProfile.find({ userId: user._id }).sort({ createdAt: -1 });
       const decks = await PersonalizedDeck.find({ userId: user._id }).sort({ createdAt: -1 });
       const entitlements = await entitlementService.getUserEntitlements(user._id.toString());
+
+      // Fetch user's physical store orders
+      const orders = await StoreOrder.find({
+        $or: [
+          { userId: user._id },
+          { customerEmail: { $regex: new RegExp(`^${user.email.trim()}$`, 'i') } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .lean();
 
       let activeDeckData: any = null;
       if (decks.length > 0) {
@@ -83,7 +94,39 @@ export class AccountController {
           decks,
           entitlements,
           activeDeckData,
+          orders,
         },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async getMyOrders(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+
+      const user = await User.findById(req.user.id);
+      if (!user) {
+        res.status(404).json({ success: false, message: 'User not found' });
+        return;
+      }
+
+      const orders = await StoreOrder.find({
+        $or: [
+          { userId: user._id },
+          { customerEmail: { $regex: new RegExp(`^${user.email.trim()}$`, 'i') } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      res.json({
+        success: true,
+        data: { orders },
       });
     } catch (err) {
       next(err);

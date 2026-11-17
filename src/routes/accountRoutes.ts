@@ -6,6 +6,7 @@ const router = Router();
 const controller = new AccountController();
 
 router.get('/', requireAuth, (req, res, next) => controller.getAccount(req, res, next));
+router.get('/orders', requireAuth, (req, res, next) => controller.getMyOrders(req, res, next));
 router.patch('/', requireAuth, (req, res, next) => controller.updateAccount(req, res, next));
 router.delete('/', requireAuth, (req, res, next) => controller.deleteAccount(req, res, next));
 
