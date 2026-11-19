@@ -82,7 +82,8 @@ export class EmailService {
   public async sendPasswordResetEmail(
     toEmail: string,
     recipientName: string,
-    resetToken: string
+    resetToken: string,
+    accountType: 'customer' | 'admin' = 'customer'
   ): Promise<SendResetEmailResult> {
     const frontendBase =
       process.env.FRONTEND_URL ||
@@ -90,7 +91,12 @@ export class EmailService {
         ? 'https://parrot-cards.vercel.app'
         : 'http://localhost:5173');
 
-    const resetUrl = `${frontendBase.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(resetToken)}`;
+    const resetPath = accountType === 'admin' ? '/admin/reset-password' : '/reset-password';
+    const resetUrl = `${frontendBase.replace(/\/$/, '')}${resetPath}?token=${encodeURIComponent(resetToken)}${
+      accountType === 'admin' ? '&type=admin' : ''
+    }`;
+    const accountLabel = accountType === 'admin' ? 'Parrot Cards Administrator' : 'Parrot Cards';
+    const emailSubject = accountType === 'admin' ? 'Reset Your Admin Password' : 'Reset Your Parrot Cards Password';
 
     const fromAddress =
       process.env.SMTP_FROM ||
@@ -102,7 +108,7 @@ export class EmailService {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Password - Parrot Cards</title>
+  <title>${emailSubject}</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #F8F5EE; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1A1817;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F8F5EE; padding: 40px 10px;">
@@ -122,7 +128,7 @@ export class EmailService {
                 Parrot Cards
               </h1>
               <p style="margin: 6px 0 0 0; font-style: italic; font-size: 13px; color: #8C6D3B;">
-                Cosmic Wisdom & Authentic Vedic Placements
+                ${accountType === 'admin' ? 'Security & Administrator Recovery' : 'Cosmic Wisdom & Authentic Vedic Placements'}
               </p>
             </td>
           </tr>
@@ -131,11 +137,11 @@ export class EmailService {
           <tr>
             <td style="padding: 10px 36px 30px 36px;">
               <h2 style="font-size: 18px; color: #1A1817; margin-bottom: 12px; font-weight: 600;">
-                Password Reset Request
+                ${accountType === 'admin' ? 'Administrator Password Reset' : 'Password Reset Request'}
               </h2>
               <p style="font-size: 14px; line-height: 1.6; color: #4A4643; margin-bottom: 24px;">
-                Namaste <strong>${recipientName || 'Seeker'}</strong>,<br/><br/>
-                We received a request to reset the password for your Parrot Cards account (<strong>${toEmail}</strong>). Click the button below to choose a new password:
+                Namaste <strong>${recipientName || (accountType === 'admin' ? 'Administrator' : 'Seeker')}</strong>,<br/><br/>
+                We received a request to reset the password for your ${accountLabel} account (<strong>${toEmail}</strong>). Click the button below to choose a new password:
               </p>
 
               <!-- CTA Button -->
@@ -174,14 +180,16 @@ export class EmailService {
 </html>
     `.trim();
 
-    if (this.isConfigured && this.transporter) {
+    const transporter = this.getTransporter();
+
+    if (transporter) {
       try {
-        const info = await this.transporter.sendMail({
+        const info = await transporter.sendMail({
           from: fromAddress,
           to: toEmail,
-          subject: 'Reset Your Parrot Cards Password',
+          subject: emailSubject,
           html: htmlContent,
-          text: `Namaste ${recipientName || 'Seeker'},\n\nWe received a request to reset your password. Please visit this link to set a new password:\n\n${resetUrl}\n\nThis link will expire in 1 hour.\n\nIf you did not request this, please ignore this email.`,
+          text: `Namaste ${recipientName || (accountType === 'admin' ? 'Administrator' : 'Seeker')},\n\nWe received a request to reset the password for your ${accountLabel} account. Please visit this link to set a new password:\n\n${resetUrl}\n\nThis link will expire in 1 hour.\n\nIf you did not request this, please ignore this email.`,
         });
 
         console.log(`✨ [EMAIL SERVICE]: Password reset email dispatched to ${toEmail} (msgId: ${info.messageId})`);

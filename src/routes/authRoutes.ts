@@ -10,6 +10,7 @@ router.post('/register', authRateLimiter, (req, res, next) => controller.registe
 router.post('/login', authRateLimiter, (req, res, next) => controller.login(req, res, next));
 router.post('/logout', (req, res) => controller.logout(req, res));
 router.post('/forgot-password', authRateLimiter, (req, res, next) => controller.forgotPassword(req, res, next));
+router.post('/verify-reset-token', (req, res, next) => controller.verifyResetToken(req, res, next));
 router.post('/reset-password', authRateLimiter, (req, res, next) => controller.resetPassword(req, res, next));
 router.get('/me', requireAuth, (req, res, next) => controller.getMe(req, res, next));
 

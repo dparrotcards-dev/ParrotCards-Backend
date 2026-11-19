@@ -52,13 +52,23 @@ export class AuthController {
 
   public async forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { email } = req.body;
+      const { email, accountType } = req.body;
       if (!email || typeof email !== 'string') {
         res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
         return;
       }
 
-      const result = await authService.forgotPassword(email);
+      const result = await authService.forgotPassword(email, accountType === 'admin' ? 'admin' : 'customer');
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async verifyResetToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { token, accountType } = req.body;
+      const result = await authService.verifyResetToken(token, accountType);
       res.json(result);
     } catch (err) {
       next(err);
@@ -67,13 +77,13 @@ export class AuthController {
 
   public async resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { token, newPassword } = req.body;
+      const { token, newPassword, accountType } = req.body;
       if (!token || !newPassword) {
         res.status(400).json({ success: false, message: 'Token and new password are required.' });
         return;
       }
 
-      const result = await authService.resetPassword(token, newPassword);
+      const result = await authService.resetPassword(token, newPassword, accountType);
       res.json(result);
     } catch (err) {
       next(err);

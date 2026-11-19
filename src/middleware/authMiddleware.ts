@@ -51,7 +51,7 @@ export function optionalAuth(req: AuthenticatedRequest, res: Response, next: Nex
   next();
 }
 
-const ADMIN_ROLES = ['admin', 'superadmin', 'analytics_manager', 'content_manager', 'support_admin'];
+export const ADMIN_ROLES = ['admin', 'superadmin', 'analytics_manager', 'content_manager', 'support_admin'];
 
 export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   requireAuth(req, res, () => {
