@@ -1,4 +1,5 @@
 import { Response, NextFunction } from 'express';
+import { Types } from 'mongoose';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import { User } from '../models/User';
 import { BirthProfile } from '../models/BirthProfile';
@@ -8,6 +9,8 @@ import { StoreOrder } from '../models/StoreOrder';
 import { EntitlementService } from '../services/entitlementService';
 
 const entitlementService = new EntitlementService();
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export class AccountController {
   public async getAccount(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -127,6 +130,64 @@ export class AccountController {
       res.json({
         success: true,
         data: { orders },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async cancelMyOrder(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, message: 'Invalid order reference' });
+        return;
+      }
+
+      const user = await User.findById(req.user.id);
+      if (!user) {
+        res.status(404).json({ success: false, message: 'User not found' });
+        return;
+      }
+
+      const order = await StoreOrder.findOne({
+        _id: id,
+        $or: [
+          { userId: user._id },
+          { customerEmail: { $regex: new RegExp(`^${escapeRegex(user.email.trim())}$`, 'i') } },
+        ],
+      });
+
+      if (!order) {
+        res.status(404).json({ success: false, message: 'Order not found' });
+        return;
+      }
+
+      const normalizedStatus = (order.status || '').toLowerCase();
+      if (normalizedStatus === 'cancelled') {
+        res.status(400).json({ success: false, message: 'This order is already cancelled' });
+        return;
+      }
+      if (normalizedStatus === 'shipped' || normalizedStatus === 'delivered') {
+        res.status(400).json({
+          success: false,
+          message: 'This order has already been shipped and can no longer be cancelled.',
+        });
+        return;
+      }
+
+      order.status = 'Cancelled';
+      await order.save();
+
+      res.json({
+        success: true,
+        message: 'Order cancelled successfully',
+        data: { order },
       });
     } catch (err) {
       next(err);
