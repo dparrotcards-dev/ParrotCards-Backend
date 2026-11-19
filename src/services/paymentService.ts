@@ -7,8 +7,10 @@ import { CardUnlock } from '../models/CardUnlock';
 import { CardDefinition } from '../models/CardDefinition';
 import { DeckPass } from '../models/DeckPass';
 import { WebhookEvent } from '../models/WebhookEvent';
+import { User } from '../models/User';
 import { RazorpayService, PAYMENT_PRICES } from '../integrations/payments/RazorpayService';
 import { EntitlementService, FREE_CARD_KEYS } from './entitlementService';
+import { emailService } from './emailService';
 
 export class PaymentService {
   private razorpayService: RazorpayService;
@@ -215,6 +217,34 @@ export class PaymentService {
         expiresAt: passExpiresAt,
         isActive: true,
       });
+    }
+
+    // Notify admin Gmail about received Razorpay payment
+    try {
+      const user = await User.findById(uid);
+      const amountRupees = order.amountPaise / 100;
+      const planTitle =
+        order.itemType === 'DECK_PASS'
+          ? '30-Day Sacred Deck Pass'
+          : `Card Key Unlock: ${order.itemId || 'Custom Deck'}`;
+
+      emailService
+        .sendPaymentNotificationToAdmin({
+          orderType: order.itemType === 'DECK_PASS' ? 'Deck Pass' : 'Card Unlock',
+          orderId: order.orderId,
+          paymentId: razorpayPaymentId,
+          amountRupees,
+          paymentMethod: capturedMethod || 'Online (Razorpay)',
+          customerName: user?.name || 'Seeker',
+          customerEmail: user?.email || '',
+          customerPhone: (user as any)?.phone || '',
+          notes: `Vedic Plan / Entitlement: ${planTitle}`,
+        })
+        .catch((emailErr) => {
+          console.error('❌ [EMAIL ALERT ERROR] Failed to send admin payment email for deck pass:', emailErr);
+        });
+    } catch (err) {
+      console.warn('⚠️ Could not load user for payment email alert:', err);
     }
 
     return {

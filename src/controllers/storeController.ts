@@ -5,6 +5,7 @@ import { CosmicProduct } from '../models/CosmicProduct';
 import { StoreOrder } from '../models/StoreOrder';
 import { User } from '../models/User';
 import { ENV } from '../config/env';
+import { emailService } from '../services/emailService';
 
 interface CacheEntry {
   data: any;
@@ -282,6 +283,8 @@ export class StoreController {
         if (matched) resolvedUserId = matched._id;
       }
 
+      const isOnline = !paymentMethod?.toUpperCase().includes('COD');
+
       const newOrder = await StoreOrder.create({
         orderId,
         userId: resolvedUserId,
@@ -306,10 +309,35 @@ export class StoreController {
           imageUrl: it.product?.imageUrl || it.imageUrl || '',
         })),
         totalAmountRupees: Number(totalAmount) || 0,
-        paymentMethod: paymentMethod || 'Online',
-        paymentStatus: paymentMethod?.includes('COD') ? 'PENDING' : 'PAID',
+        paymentMethod: paymentMethod || 'Online (Razorpay)',
+        paymentId: paymentId || '',
+        paymentStatus: isOnline ? 'PAID' : 'PENDING',
         status: 'Confirmed',
       });
+
+      // Send payment received email to admin's Gmail for online Razorpay payments
+      if (isOnline) {
+        emailService
+          .sendPaymentNotificationToAdmin({
+            orderType: 'Store Order',
+            orderId: newOrder.orderId,
+            paymentId: paymentId || 'Razorpay Online',
+            amountRupees: newOrder.totalAmountRupees,
+            paymentMethod: newOrder.paymentMethod,
+            customerName: newOrder.customerName,
+            customerEmail: newOrder.customerEmail,
+            customerPhone: newOrder.customerPhone,
+            shippingAddress: newOrder.shippingAddress,
+            items: newOrder.products.map((p) => ({
+              name: p.name,
+              quantity: p.quantity,
+              priceRupees: p.priceRupees,
+            })),
+          })
+          .catch((err) => {
+            console.error('❌ [EMAIL ALERT ERROR] Failed to send admin payment notification for store order:', err);
+          });
+      }
 
       res.status(201).json({
         success: true,

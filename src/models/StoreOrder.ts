@@ -29,6 +29,7 @@ export interface IStoreOrder extends Document {
   products: IStoreOrderItem[];
   totalAmountRupees: number;
   paymentMethod: string;
+  paymentId?: string;
   paymentStatus: 'PAID' | 'PENDING' | 'FAILED';
   status: StoreOrderStatus;
   courierName?: string;
@@ -68,6 +69,7 @@ const StoreOrderSchema = new Schema<IStoreOrder>(
     products: [StoreOrderItemSchema],
     totalAmountRupees: { type: Number, required: true },
     paymentMethod: { type: String, default: 'Online' },
+    paymentId: { type: String },
     paymentStatus: { type: String, enum: ['PAID', 'PENDING', 'FAILED'], default: 'PAID' },
     status: {
       type: String,
