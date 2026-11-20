@@ -7,7 +7,11 @@ export const envSchema = z
   .object({
     PORT: z.string().default('5000').transform(Number),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-    FRONTEND_URL: z.string().default('http://localhost:5173'),
+    FRONTEND_URL: z.string().url().default(
+      process.env.VERCEL || process.env.NODE_ENV === 'production'
+        ? 'https://parrot-cards.vercel.app'
+        : 'http://localhost:5173'
+    ),
     GOOGLE_CLIENT_ID: z.string().optional().default(''),
     MONGODB_URI: z.string().default('mongodb://127.0.0.1:27017/parrot-cards'),
     MONGODB_TEST_URI: z.string().default('mongodb://127.0.0.1:27017/parrotcards_test_isolated'),
@@ -178,7 +182,11 @@ export const ENV = parsedEnv.success
   : ({
       PORT: Number(process.env.PORT || 5000),
       NODE_ENV: 'production' as const,
-      FRONTEND_URL: process.env.FRONTEND_URL || 'https://parrot-cards.vercel.app',
+      FRONTEND_URL:
+        process.env.FRONTEND_URL ||
+        (process.env.VERCEL || process.env.NODE_ENV === 'production'
+          ? 'https://parrot-cards.vercel.app'
+          : 'http://localhost:5173'),
       GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
       MONGODB_URI: process.env.MONGODB_URI || '',
       MONGODB_TEST_URI: '',

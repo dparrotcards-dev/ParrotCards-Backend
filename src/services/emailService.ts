@@ -1,6 +1,38 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import { ENV } from '../config/env';
 
+const PRODUCTION_FRONTEND_URL = 'https://parrot-cards.vercel.app';
+
+export const resolveFrontendBaseUrl = (
+  configuredUrl = ENV.FRONTEND_URL,
+  isProduction = ENV.NODE_ENV === 'production' || Boolean(process.env.VERCEL)
+): string => {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(configuredUrl);
+  } catch {
+    if (isProduction) {
+      console.warn('Invalid FRONTEND_URL in production; using the canonical Parrot Cards website URL.');
+      return PRODUCTION_FRONTEND_URL;
+    }
+    throw new Error('FRONTEND_URL must be a valid absolute URL.');
+  }
+
+  const isLocalhost =
+    parsedUrl.hostname === 'localhost' ||
+    parsedUrl.hostname.endsWith('.localhost') ||
+    parsedUrl.hostname === '127.0.0.1' ||
+    parsedUrl.hostname === '0.0.0.0' ||
+    parsedUrl.hostname === '[::1]';
+
+  if (isProduction && isLocalhost) {
+    console.warn('Localhost FRONTEND_URL is not valid in production; using the canonical Parrot Cards website URL.');
+    return PRODUCTION_FRONTEND_URL;
+  }
+
+  return configuredUrl.replace(/\/+$/, '');
+};
+
 export interface SendResetEmailResult {
   success: boolean;
   messageId?: string;
@@ -85,11 +117,7 @@ export class EmailService {
     resetToken: string,
     accountType: 'customer' | 'admin' = 'customer'
   ): Promise<SendResetEmailResult> {
-    const frontendBase =
-      process.env.FRONTEND_URL ||
-      (process.env.NODE_ENV === 'production' || process.env.VERCEL
-        ? 'https://parrot-cards.vercel.app'
-        : 'http://localhost:5173');
+    const frontendBase = resolveFrontendBaseUrl();
 
     const resetPath = accountType === 'admin' ? '/admin/reset-password' : '/reset-password';
     const resetUrl = `${frontendBase.replace(/\/$/, '')}${resetPath}?token=${encodeURIComponent(resetToken)}${
@@ -394,11 +422,7 @@ ${replyText}
       hour12: true,
     });
 
-    const frontendBase =
-      process.env.FRONTEND_URL ||
-      (process.env.NODE_ENV === 'production' || process.env.VERCEL
-        ? 'https://parrot-cards.vercel.app'
-        : 'http://localhost:5173');
+    const frontendBase = resolveFrontendBaseUrl();
 
     const adminLink = `${frontendBase.replace(/\/$/, '')}/admin/orders`;
 
