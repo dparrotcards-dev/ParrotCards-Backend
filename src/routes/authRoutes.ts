@@ -8,6 +8,7 @@ const controller = new AuthController();
 
 router.post('/register', authRateLimiter, (req, res, next) => controller.register(req, res, next));
 router.post('/login', authRateLimiter, (req, res, next) => controller.login(req, res, next));
+router.post('/google', authRateLimiter, (req, res, next) => controller.googleLogin(req, res, next));
 router.post('/logout', (req, res) => controller.logout(req, res));
 router.post('/forgot-password', authRateLimiter, (req, res, next) => controller.forgotPassword(req, res, next));
 router.post('/verify-reset-token', (req, res, next) => controller.verifyResetToken(req, res, next));

@@ -1,16 +1,21 @@
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import { User, IUser } from '../models/User';
-import { RegisterInput, LoginInput } from '../validators/authValidators';
+import { RegisterInput, LoginInput, GoogleLoginInput } from '../validators/authValidators';
 import { ENV } from '../config/env';
 import { IAuthUser } from '../types';
 import { emailService } from './emailService';
 import { ADMIN_ROLES } from '../middleware/authMiddleware';
 
+const createAuthError = (message: string, statusCode: number) =>
+  Object.assign(new Error(message), { statusCode });
+
 export class AuthService {
   private readonly SALT_ROUNDS = 10;
   private readonly TOKEN_EXPIRY = '365d';
+  private readonly googleClient = new OAuth2Client(ENV.GOOGLE_CLIENT_ID);
 
   public async register(input: RegisterInput): Promise<{ user: IAuthUser; token: string }> {
     const existing = await User.findOne({ email: input.email.toLowerCase() });
@@ -57,6 +62,83 @@ export class AuthService {
 
     const token = this.generateToken(authUser);
     return { user: authUser, token };
+  }
+
+  public async loginWithGoogle(input: GoogleLoginInput): Promise<{ user: IAuthUser; token: string }> {
+    if (!ENV.GOOGLE_CLIENT_ID) {
+      throw createAuthError('Google sign-in is not configured on the server.', 503);
+    }
+
+    let payload;
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: input.idToken,
+        audience: ENV.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw createAuthError('The Google sign-in credential is invalid or expired.', 401);
+    }
+
+    if (!payload?.sub || !payload.email || payload.email_verified !== true) {
+      throw createAuthError('Google sign-in requires a verified email address.', 401);
+    }
+
+    const email = payload.email.trim().toLowerCase();
+    let user = await User.findOne({ googleId: payload.sub });
+    if (!user) {
+      user = await User.findOne({ email });
+    }
+
+    if (user) {
+      if (user.role !== 'user') {
+        throw createAuthError('Google sign-in is available for customer accounts only.', 403);
+      }
+
+      if (user.googleId && user.googleId !== payload.sub) {
+        throw createAuthError('This email is already linked to a different Google account.', 409);
+      }
+
+      if (!user.googleId) {
+        user.googleId = payload.sub;
+        await user.save();
+      }
+    } else {
+      const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), this.SALT_ROUNDS);
+      try {
+        user = await User.create({
+          email,
+          name: payload.name?.trim() || email.split('@')[0],
+          googleId: payload.sub,
+          passwordHash,
+          role: 'user',
+        });
+      } catch (err) {
+        if (!err || typeof err !== 'object' || !('code' in err) || err.code !== 11000) throw err;
+
+        user = await User.findOne({ $or: [{ googleId: payload.sub }, { email }] });
+        if (!user) throw err;
+        if (user.role !== 'user') {
+          throw createAuthError('Google sign-in is available for customer accounts only.', 403);
+        }
+        if (user.googleId && user.googleId !== payload.sub) {
+          throw createAuthError('This email is already linked to a different Google account.', 409);
+        }
+        if (!user.googleId) {
+          user.googleId = payload.sub;
+          await user.save();
+        }
+      }
+    }
+
+    const authUser: IAuthUser = {
+      id: user._id.toString(),
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+
+    return { user: authUser, token: this.generateToken(authUser) };
   }
 
   public async forgotPassword(

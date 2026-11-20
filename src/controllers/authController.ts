@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/authService';
-import { registerSchema, loginSchema } from '../validators/authValidators';
+import { registerSchema, loginSchema, googleLoginSchema } from '../validators/authValidators';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import { User } from '../models/User';
 
@@ -32,6 +32,22 @@ export class AuthController {
       res.json({
         success: true,
         message: 'Signed in successfully',
+        data: { user, token },
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  public async googleLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const validated = googleLoginSchema.parse(req.body);
+      const { user, token } = await authService.loginWithGoogle(validated);
+
+      res.cookie('token', token, authService.getCookieOptions());
+      res.json({
+        success: true,
+        message: 'Signed in with Google successfully',
         data: { user, token },
       });
     } catch (err) {

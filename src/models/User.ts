@@ -4,6 +4,7 @@ export type UserRole = 'user' | 'admin' | 'superadmin' | 'analytics_manager' | '
 
 export interface IUser extends Document {
   email: string;
+  googleId?: string;
   passwordHash: string;
   name: string;
   role: UserRole;
@@ -16,6 +17,7 @@ export interface IUser extends Document {
 const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+    googleId: { type: String, unique: true, sparse: true, trim: true },
     passwordHash: { type: String, required: true },
     name: { type: String, required: true, trim: true },
     role: {
